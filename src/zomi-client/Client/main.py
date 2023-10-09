@@ -1138,7 +1138,7 @@ class ZMClient:
                                 f"There is extra image data in the result: {result.extra_image_data}"
                             )
                             if "virel" in result.extra_image_data:
-                                from zm_ml.Server.ML.Detectors.virelai import (
+                                from zomi_client.Server.ML.Detectors.virelai import (
                                     VirelAI,
                                 )
 

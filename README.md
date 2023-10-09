@@ -46,12 +46,6 @@ python3 -m pip install --upgrade pip
 
 1. [**EventStartCommand**/**EventEndCommand**](https://zoneminder.readthedocs.io/en/latest/userguide/definemonitor.html#recording-tab:~:text=events%20are%20recorded.-,Event%20Start%20Command,the%20command%20will%20be%20the%20event%20id%20and%20the%20monitor%20id.,-Viewing%20Tab) is what runs the object detection script (Push method). Before, SHM was polled (Pull method) every \<X> seconds to see if a new event had been triggered.
 
-# Installation
-
-## Manual Install
-See the Wiki for [Manual Installation](https://github.com/baudneo/ZM_ML/wiki/Manual-Installation) instructions.
-
-
 # Client Info
 The client uses the new ZoneMinder EventStartCommand/EventEndCommand option.
 This means ZM kicks off the ML chain instead of the ML chain scanning SHM looking for an event, more efficient!

@@ -55,7 +55,7 @@ class MQTT(CoolDownBase):
 
             self.client_id = uuid.uuid4().__str__()
         self.id_file.write_text(self.client_id)
-        self.client_id = f"zm_ml-client_{self.client_id}"
+        self.client_id = f"zomi-client_{self.client_id}"
 
         self.sanitize = g.config.logging.sanitize.enabled
         self.sanitize_str = g.config.logging.sanitize.replacement_str
@@ -278,7 +278,7 @@ class MQTT(CoolDownBase):
             if self.config.root_topic:
                 root_topic = f"{self.config.root_topic}/mid/{mid}"
             else:
-                root_topic = f"zm_ml/mid/{mid}"
+                root_topic = f"zomi/mid/{mid}"
 
         if fmt_str or results:
             if fmt_str:

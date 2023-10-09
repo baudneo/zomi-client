@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import venv
 import platform
 import subprocess
@@ -19,157 +20,20 @@ _extended_re: Pattern = re.compile(r"(?<!\\)\$\{([A-Za-z0-9_]+)((:?-)([^}]+))?}"
 
 # Change these if you want to install to a different default location
 # You can also specify these locations via CLI
-DEFAULT_DATA_DIR = "/opt/zm_ml/var/lib/zm_ml"
-DEFAULT_CONFIG_DIR = "/opt/zm_ml/etc/zm_ml"
-DEFAULT_LOG_DIR = "/opt/zm_ml/var/logs/zm_ml"
+DEFAULT_DATA_DIR = "/opt/zomi/client/var/lib/zomi"
+DEFAULT_CONFIG_DIR = "/opt/zomi/client/etc/zomi"
+DEFAULT_LOG_DIR = "/opt/zomi/client/var/logs/zomi"
 DEFAULT_SYSTEM_CREATE_PERMISSIONS = 0o755
 # config files will have their permissions adjusted to this
 DEFAULT_CONFIG_CREATE_PERMISSIONS = 0o755
 # default ML models to install (SEE: available_models{})
-DEFAULT_MODELS = [
-    "yolov4",
-    "yolov4_tiny",
-    "yolov7",
-    "yolov7_tiny",
-    "yolov8m",
-    "yolov8n",
-    "yolo_nas_s",
-]
 REPO_BASE = Path(__file__).parent.parent
 INSTALL_FILE_DIR = Path(__file__).parent
-ZMML_CACHE = REPO_BASE / ".zmml_cache"
-INSTALL_TYPE = "client"
 _ENV = {}
 THREADS: Dict[str, Thread] = {}
 
-# Do not change these unless you know what you are doing
-available_models = {
-    "yolov8n": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt"
-        ],
-        "config": [],
-    },
-    "yolov8s": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s.pt"
-        ],
-        "config": [],
-    },
-    "yolov8m": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8m.pt"
-        ],
-        "config": [],
-    },
-    "yolov8l": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8l.pt"
-        ],
-        "config": [],
-    },
-    "yolov8x": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x.pt"
-        ],
-        "config": [],
-    },
-    "yolo_nas_s": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolo_nas_s.pt"
-        ],
-        "config": [],
-    },
-    "yolo_nas_m": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolo_nas_m.pt"
-        ],
-        "config": [],
-    },
-    "yolo_nas_l": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolo_nas_l.pt"
-        ],
-        "config": [],
-    },
-    "yolov4": {
-        "folder": "yolo",
-        "model": [
-            # "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov4.weights",
-            "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov4_new.weights",
-        ],
-        "config": [
-            # "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4.cfg",
-            "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4_new.cfg",
-        ],
-    },
-    "yolov4_tiny": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov4-tiny.weights"
-        ],
-        "config": [
-            "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4-tiny.cfg"
-        ],
-    },
-    "yolov4_p6": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov4-p6.weights"
-        ],
-        "config": [
-            "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4-p6.cfg"
-        ],
-    },
-    "yolov7": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov7.weights"
-        ],
-        "config": [
-            "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov7.cfg"
-        ],
-    },
-    "yolov7_tiny": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov7-tiny.weights"
-        ],
-        "config": [
-            "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov7-tiny.cfg"
-        ],
-    },
-    "yolov7x": {
-        "folder": "yolo",
-        "model": [
-            "https://github.com/AlexeyAB/darknet/releases/download/yolov4/yolov7x.weights"
-        ],
-        "config": [
-            "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov7x.cfg"
-        ],
-    },
-    "coral_tpu": {
-        "folder": "coral_tpu",
-        "model": [
-            "https://github.com/google-coral/edgetpu/raw/master/test_data/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite",
-            "https://github.com/google-coral/test_data/raw/master/ssdlite_mobiledet_coco_qat_postprocess_edgetpu.tflite",
-            "https://github.com/google-coral/test_data/raw/master/ssd_mobilenet_v2_face_quant_postprocess_edgetpu.tflite",
-            "https://github.com/google-coral/test_data/raw/master/tf2_ssd_mobilenet_v2_coco17_ptq_edgetpu.tflite",
-            "https://github.com/google-coral/test_data/raw/master/efficientdet_lite3_512_ptq_edgetpu.tflite",
-        ],
-        "config": "https://raw.githubusercontent.com/baudneo/ZM_ML/master/examples/coco-labels-paper.txt",
-    },
-}
 # Logging
-logger = logging.getLogger("install_zm_ml")
+logger = logging.getLogger("install_client")
 logger.setLevel(logging.INFO)
 log_formatter = logging.Formatter(
     "%(asctime)s.%(msecs)04d %(name)s[%(process)s] %(levelname)s %(module)s:%(lineno)d -> %(message)s",
@@ -180,9 +44,8 @@ console.setFormatter(log_formatter)
 logger.addHandler(console)
 
 # Misc.
-__version__ = "0.0.1a5"
 __dependancies__ = "psutil", "requests", "tqdm", "distro"
-__doc__ = """Install ZM-ML Server / Client"""
+__doc__ = """Install ZoMi Machine Learning Client"""
 
 # Logic
 tst_msg_wrap = "[testing!!]", "[will not actually execute]"
@@ -206,23 +69,23 @@ def parse_env_file(env_file: Path) -> None:
         _ENV.update(dotenv_vals)
 
 
-def test_msg(msg: str, level: Optional[Union[str, int]] = None):
+def test_msg(msg_: str, level: Optional[Union[str, int]] = None):
     """Print test message. Changes stack level to 2 to show caller of test_msg."""
     if testing:
-        logger.warning(f"{tst_msg_wrap[0]} {msg} {tst_msg_wrap[1]}", stacklevel=2)
+        logger.warning(f"{tst_msg_wrap[0]} {msg_} {tst_msg_wrap[1]}", stacklevel=2)
     else:
         if level in ("debug", logging.DEBUG, None):
-            logger.debug(msg, stacklevel=2)
+            logger.debug(msg_, stacklevel=2)
         elif level in ("info", logging.INFO):
-            logger.info(msg, stacklevel=2)
+            logger.info(msg_, stacklevel=2)
         elif level in ("warning", logging.WARNING):
-            logger.warning(msg, stacklevel=2)
+            logger.warning(msg_, stacklevel=2)
         elif level in ("error", logging.ERROR):
-            logger.error(msg, stacklevel=2)
+            logger.error(msg_, stacklevel=2)
         elif level in ("critical", logging.CRITICAL):
-            logger.critical(msg, stacklevel=2)
+            logger.critical(msg_, stacklevel=2)
         else:
-            logger.info(msg, stacklevel=2)
+            logger.info(msg_, stacklevel=2)
 
 
 def get_distro() -> namedtuple:
@@ -293,101 +156,8 @@ def get_web_user() -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
-def get_models():
-    global models, no_models, THREADS
-    # check models
-    if no_models:
-        if INSTALL_TYPE in ["server", "both"]:
-            logger.info(
-                " --no-models requested when the server is being installed?"
-                " Skipping model download..."
-            )
-        return
-    if not models:
-        logger.info(f"No models specified, using default models {DEFAULT_MODELS}")
-        if interactive:
-            x = input(f"Download default models? [Y/n]... ")
-            if x.casefold() == "n":
-                logger.info("Skipping model download...")
-                models = []
-            else:
-                models = DEFAULT_MODELS
-        else:
-            logger.info("Skipping download of default models...")
-
-    if models:
-        for model in models:
-            model = model.strip().casefold()
-            if model not in available_models.keys():
-                logger.error(
-                    f"Invalid model '{model}' -  Allowed models: {', '.join(available_models.keys())}"
-                )
-            else:
-                logger.info(f"Downloading model data: {model}")
-                model_data = available_models[model]
-                model_folder = model_dir / model_data["folder"]
-                cache_folder = ZMML_CACHE / model_data["folder"]
-                create_dir(cache_folder, ml_user, ml_group, 0o777)
-                _model = model_data["model"]
-                _config = model_data["config"]
-
-                if _model:
-                    for model_url in model_data["model"]:
-                        model_file = model_folder / Path(model_url).name
-                        if model_file.exists():
-                            if not force_models:
-                                logger.warning(
-                                    f"Model file '{model_file}' already exists, skipping..."
-                                )
-                                continue
-                            else:
-                                logger.info(
-                                    f"--force-model passed via CLI - Model file '{model_file}' already exists, overwriting..."
-                                )
-                        else:
-                            logger.info(
-                                f"Model file ({model_file}) does not exist, downloading..."
-                            )
-                        # Thread it
-                        THREADS[model_file.name] = Thread(
-                            target=download_file,
-                            args=(
-                                model_url,
-                                model_file,
-                                ml_user,
-                                ml_group,
-                                cfg_create_mode,
-                            ),
-                        )
-                        THREADS[model_file.name].start()
-                if _config:
-                    for config_url in model_data["config"]:
-                        config_file = model_folder / Path(config_url).name
-                        if config_file.exists():
-                            if not force_models:
-                                logger.warning(
-                                    f"Config file '{config_file}' already exists, skipping..."
-                                )
-                                continue
-                            else:
-                                logger.info(
-                                    f"--force-model passed via CLI - Config file '{config_file}' already exists, overwriting..."
-                                )
-                        THREADS[config_file.name] = Thread(
-                            target=download_file,
-                            args=(
-                                config_url,
-                                config_file,
-                                ml_user,
-                                ml_group,
-                                cfg_create_mode,
-                            ),
-                        )
-                        THREADS[config_file.name].start()
-
-
 def parse_cli():
-    global args, models
+    global args
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -415,7 +185,8 @@ def parse_cli():
         dest="zm_api",
         default=None,
         type=str,
-        help="ZoneMinder API URL, If this is ommited and --zm-portal is specified, the API URL will be derived from the portal URL (--zm-portal + '/api')",
+        help="ZoneMinder API URL, If this is omited and --zm-portal "
+        "is specified, the API URL will be derived from the portal URL (--zm-portal + '/api')",
     )
     parser.add_argument(
         "--zm-user",
@@ -475,49 +246,10 @@ def parse_cli():
         dest="interactive",
         help="Run in interactive mode",
     )
-    parser.add_argument(
-        "--models-only",
-        "--only-models",
-        dest="models_only",
-        action="store_true",
-        help="Install models only",
-    )
-    parser.add_argument(
-        "--add-model",
-        action="append",
-        dest="models",
-        help=f"Download model files (can be used several time --add-model yolov4 --add-model yolov7_tiny) Default: {' '.join(DEFAULT_MODELS)}",
-        default=DEFAULT_MODELS,
-        choices=available_models.keys(),
-    )
-    parser.add_argument(
-        "--all-models",
-        action="store_true",
-        dest="all_models",
-        help="Download all available model files",
-    )
-    parser.add_argument(
-        "--text-models",
-        type=str,
-        dest="text_models",
-        help="Download model files designated by a comma delimited string of model names [yolov4,yolov7,etc]",
-    )
 
     parser.add_argument(
-        "--force-models",
-        action="store_true",
-        dest="force_models",
-        help="Force model installation [Overwrite existing model files]",
-    )
-    parser.add_argument(
-        "--no-models",
-        dest="no_models",
-        action="store_true",
-        help="Do not install models",
-    )
-    parser.add_argument(
         "--install-type",
-        choices=["server", "client", "both"],
+        choices=["client"],
         default="client",
         required=True,
         dest="install_type",
@@ -535,7 +267,7 @@ def parse_cli():
     parser.add_argument(
         "--dir-config",
         help=f"Directory where config files are held Default: {DEFAULT_CONFIG_DIR}",
-        default="./zm_ml/conf",
+        default="./zomi/conf",
         type=Path,
         dest="config_dir",
     )
@@ -543,7 +275,7 @@ def parse_cli():
         "--dir-data",
         help=f"Directory where variable data is held Default: {DEFAULT_DATA_DIR}",
         dest="data_dir",
-        default="./zm_ml/data",
+        default="./zomi/data",
         type=Path,
     )
     parser.add_argument(
@@ -558,13 +290,13 @@ def parse_cli():
         "--dir-tmp",
         type=Path,
         help="Temp files directory",
-        default=f"{tempfile.gettempdir()}/zm_ml",
+        default=f"{tempfile.gettempdir()}/zomi",
         dest="tmp_dir",
     )
     parser.add_argument(
         "--dir-log",
         help=f"Directory where logs will be stored Default: {DEFAULT_LOG_DIR}",
-        default="./zm_ml/log",
+        default="./zomi/log",
         dest="log_dir",
         type=Path,
     )
@@ -577,7 +309,8 @@ def parse_cli():
     parser.add_argument(
         "--user",
         "-U",
-        help="User to install as [leave empty to auto-detect what user runs the web server] (Change if installing server on a remote host)",
+        help="User to install as [leave empty to auto-detect what user runs "
+        "the web server] (Change if installing server on a remote host)",
         type=str,
         dest="ml_user",
         default="",
@@ -585,7 +318,8 @@ def parse_cli():
     parser.add_argument(
         "--group",
         "-G",
-        help="Group member to install as [leave empty to auto-detect what group member runs the web server] (Change if installing server on a remote host)",
+        help="Group member to install as [leave empty to auto-detect what "
+        "group member runs the web server] (Change if installing server on a remote host)",
         type=str,
         dest="ml_group",
         default="",
@@ -602,9 +336,6 @@ def parse_cli():
         dest="test",
         help="Run in test mode, no actions are actually executed.",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
 
     parser.add_argument(
         "--system-create-permissions",
@@ -614,7 +345,8 @@ def parse_cli():
     )
     parser.add_argument(
         "--config-create-permissions",
-        help=f"Config files (server.yml, client.yml, secrets.yml) octal [0o] file permissions [Default: {oct(DEFAULT_CONFIG_CREATE_PERMISSIONS)}]",
+        help=f"Config files (server.yml, client.yml, secrets.yml) octal [0o] file permissions "
+        f"[Default: {oct(DEFAULT_CONFIG_CREATE_PERMISSIONS)}]",
         type=lambda x: int(x, 8),
         default=DEFAULT_CONFIG_CREATE_PERMISSIONS,
     )
@@ -647,8 +379,11 @@ def chown_mod(path: Path, user: Union[str, int], group: Union[str, int], mode: i
 
 
 def create_dir(path: Path, user: Union[str, int], group: Union[str, int], mode: int):
-    msg = f"Created directory: {path} with user:group:permission [{user}:{group}:{mode:o}]"
-    test_msg(msg)
+    message = (
+        f"Created directory: {path} with user:group:permission "
+        f"[{user}:{group}:{mode:o}]"
+    )
+    test_msg(message)
     if not testing:
         path.mkdir(parents=True, exist_ok=True, mode=mode)
         chown_mod(path, user, group, mode)
@@ -669,11 +404,11 @@ def show_config(cli_args: argparse.Namespace):
             "Press Enter to continue if all looks fine, otherwise use 'Ctrl+C' to exit and edit CLI options..."
         )
     else:
-        msg = f"This is a non-interactive{' TEST' if testing else ''} session, continuing with installation... "
+        _msg_ = f"This is a non-interactive{' TEST' if testing else ''} session, continuing with installation... "
         if testing:
-            logger.info(msg)
+            logger.info(_msg_)
         else:
-            logger.info(f"{msg} in 5 seconds, press 'Ctrl+C' to exit")
+            logger.info(f"{_msg_} in 5 seconds, press 'Ctrl+C' to exit")
             time.sleep(5)
 
 
@@ -719,12 +454,12 @@ def do_web_user():
         else:
             _missing = f"{_u} and {_g}"
 
-        msg = f"Unable to determine web server {_missing}, EXITING..."
+        _mess = f"Unable to determine web server {_missing}, EXITING..."
         if not testing:
-            logger.error(msg)
+            logger.error(_mess)
             sys.exit(1)
         else:
-            test_msg(msg)
+            test_msg(_mess)
 
 
 def install_dirs(
@@ -734,7 +469,7 @@ def install_dirs(
     sub_dirs: Optional[List[str]] = None,
     perms: int = 0o755,
 ):
-    """Install directories"""
+    """Create directories with sub dirs"""
     if sub_dirs is None:
         sub_dirs = []
     if not dest_dir:
@@ -785,12 +520,12 @@ def install_dirs(
 
 
 def download_file(url: str, dest: Path, user: str, group: str, mode: int):
-    msg = (
+    _mess_ = (
         f"Downloading {url}..."
         if not testing
         else f"TESTING if file exists at :: {url}..."
     )
-    logger.info(msg)
+    logger.info(_mess_)
     import requests
     from tqdm.auto import tqdm
     import shutil
@@ -844,7 +579,8 @@ def download_file(url: str, dest: Path, user: str, group: str, mode: int):
 
 
 def copy_file(src: Path, dest: Path, user: str, group: str, mode: int):
-    msg = f"Copying {src} to {dest}..."
+    """Copy a file from src to dest, chown and chmod it using user:group and mode."""
+    __msg = f"Copying {src} to {dest}..."
     if not testing:
         # Check if the file exists, if so, show a log warning and remove, then copy
         import shutil
@@ -853,11 +589,11 @@ def copy_file(src: Path, dest: Path, user: str, group: str, mode: int):
             logger.warning(f"File {dest} already exists, removing...")
             dest.unlink()
 
-        logger.info(msg)
+        logger.info(__msg)
         shutil.copy(src, dest)
         chown_mod(dest, user, group, mode)
     else:
-        test_msg(msg)
+        test_msg(__msg)
 
 
 def get_pkg_manager():
@@ -1029,9 +765,9 @@ def install_host_dependencies(_type: str):
                 )
                 raise
 
-            except Exception as e:
-                logger.error(f"Exception type: {type(e)} --- {e}")
-                raise e
+            except Exception as exc_:
+                logger.error(f"Exception type: {type(exc_)} --- {exc_}")
+                raise exc_
             else:
                 logger.info(f"{cmd_array[0]} is installed")
                 logger.debug(f"{cmd_array} output: {x.stdout.decode('utf-8')}")
@@ -1079,7 +815,8 @@ def install_host_dependencies(_type: str):
                             if not testing:
                                 _install = False
                                 _input = input(
-                                    f"Host dependencies are not installed, would you like to install {' '.join(deps)}? [Y/n]"
+                                    f"Host dependencies are not installed, would you like to install "
+                                    f"{' '.join(deps)}? [Y/n]"
                                 )
                                 if _input:
                                     _input = _input.strip().casefold()
@@ -1109,21 +846,6 @@ def install_host_dependencies(_type: str):
 
 
 def main():
-    global INSTALL_TYPE
-    install_server, install_server = False, False
-    if INSTALL_TYPE:
-        if INSTALL_TYPE == "server":
-            install_server = True
-        elif INSTALL_TYPE == "client":
-            install_client = True
-        elif INSTALL_TYPE == "both":
-            install_server = True
-            install_client = True
-    else:
-        logger.info("No install type specified, using 'client' as default...")
-        args.install_type = INSTALL_TYPE = "client"
-        install_client = True
-
     install_dirs(
         data_dir,
         DEFAULT_DATA_DIR,
@@ -1133,13 +855,13 @@ def main():
             "push",
             "scripts",
             "images",
-            "locks",
             "bin",
+            "misc",
         ],
     )
     install_dirs(
         Path(DEFAULT_DATA_DIR + "/face_data"),
-        DEFAULT_DATA_DIR,
+        DEFAULT_DATA_DIR + "/face_data",
         "Face Data",
         sub_dirs=["known", "unknown"],
         perms=0o777,
@@ -1148,59 +870,57 @@ def main():
         cfg_dir, DEFAULT_CONFIG_DIR, "Config", sub_dirs=[], perms=cfg_create_mode
     )
     install_dirs(log_dir, DEFAULT_LOG_DIR, "Log", sub_dirs=[], perms=0o777)
-    get_models()
+
     do_install("secrets")
-    do_install(INSTALL_TYPE)
+    do_install("client")
 
 
 def do_install(_inst_type: str):
-    existing_secrets = False
-    path_glob_out = cfg_dir.glob(f"{_inst_type}.*")
-    for iter_item in path_glob_out:
-        logger.debug(
-            f"{_inst_type} cfg generator iterated in a for loop: {iter_item = }"
-        )
-    path_glob_out = sorted(path_glob_out, reverse=True)
-    if path_glob_out:
+    cfg_dir = Path("/home/baudneo/zm")
+    path_glob_out = cfg_dir.rglob(f"{_inst_type}.*")
+    files = [x for x in path_glob_out]
+    files = sorted(files, reverse=True)
+    if files:
+        _target: Optional[Path] = None
         backup_num = 1
-        if path_glob_out[0].suffix == ".bak":
-            backup_num = int(path_glob_out[0].stem.split(".")[-1]) + 1
-        file_backup = cfg_dir / f"{_inst_type}.{backup_num}.bak"
-        for _file in path_glob_out:
-            if _file.name == f"{_inst_type}.yml":
-                if _inst_type == "secrets":
-                    existing_secrets = True
-                    if args.install_secrets:
-                        existing_secrets = False
-                        logger.info(
-                            "--overwrite-secrets was passed on CLI, overwriting existing secrets file..."
+        high = 0
+        for _file in files:
+            if _file.name.startswith(f"{_inst_type}"):
+                if _file.suffix == ".bak":
+                    i = int(_file.stem.split(".")[-1])
+                    logger.debug(f"Found a backup numbered: {i}")
+
+                    if i > high:
+                        high = backup_num = i + 1
+                        logger.debug(
+                            f"This backup has a higher number, using it as index: {backup_num = }"
                         )
-                    if not existing_secrets:
-                        # copy example config
-                        copy_file(
-                            INSTALL_FILE_DIR.parent / "configs/example_secrets.yml",
-                            cfg_dir / "secrets.yml",
-                            ml_user,
-                            ml_group,
-                            cfg_create_mode,
-                        )
-                else:
-                    copy_file(_file, file_backup, ml_user, ml_group, cfg_create_mode)
-                break
-        if _inst_type != "secrets":
+
+                elif _file.suffix in (".yml", ".yaml"):
+                    logger.debug(f"found existing {_inst_type} config file: {_file}")
+                    _target = _file
+        if _target:
+            file_backup = cfg_dir / f"{_inst_type}.{backup_num}.bak"
+            logger.debug(
+                f"Backing up existing {_inst_type} config file: {_target} to {file_backup}"
+            )
+            # Backup existing
+            copy_file(_target, file_backup, ml_user, ml_group, cfg_create_mode)
+            # install new
             copy_file(
-                INSTALL_FILE_DIR.parent / f"configs/example_{_inst_type}.yml",
-                cfg_dir / f"{_inst_type}.yml",
+                INSTALL_FILE_DIR.parent.parent / f"configs/example_{_inst_type}.yml",
+                _target,
                 ml_user,
                 ml_group,
                 cfg_create_mode,
             )
+
     else:
         logger.debug(f"No existing {_inst_type} config files found!")
         if cfg_dir.is_dir() or testing:
             test_msg(f"Creating {_inst_type} config file from example...", "info")
             copy_file(
-                INSTALL_FILE_DIR.parent / f"configs/example_{_inst_type}.yml",
+                REPO_BASE / f"configs/example_{_inst_type}.yml",
                 cfg_dir / f"{_inst_type}.yml",
                 ml_user,
                 ml_group,
@@ -1232,84 +952,58 @@ def do_install(_inst_type: str):
     if _inst_type != "secrets":
         install_host_dependencies(_inst_type)
         logger.info(f"Installing '{_inst_type}' specific files...")
-        if _inst_type == "server":
-            copy_file(
-                INSTALL_FILE_DIR / "mlapi.py",
-                data_dir / "bin/mlapi.py",
-                ml_user,
-                ml_group,
-                0o755,
-            )
-            test_msg(
-                f"Creating symlinks for ZM MLAPI: /usr/local/bin will contain zmmlapi symlink to {data_dir}/bin/mlapi.py",
-            )
+    if _inst_type == "client":
+        copy_file(
+            INSTALL_FILE_DIR / "EventStartCommand.sh",
+            data_dir / "bin/EventStartCommand.sh",
+            ml_user,
+            ml_group,
+            cfg_create_mode,
+        )
 
-            if not testing:
-                _dest = Path("/usr/local/bin/zmmlapi")
-                if _dest.exists():
-                    logger.warning(
-                        f"zmmlapi symlink already exists at {_dest}, unlinking and relinking..."
-                    )
-                    _dest.unlink()
-                _dest.symlink_to(f"{data_dir}/bin/mlapi.py")
-            # SERVER INSTALL ENVS FOR envsubst CMD
-            if "ML_INSTALL_SERVER_ADDRESS" not in _ENV:
-                _ENV["ML_INSTALL_SERVER_ADDRESS"] = "0.0.0.0"
-            if "ML_INSTALL_SERVER_PORT" not in _ENV:
-                _ENV["ML_INSTALL_SERVER_PORT"] = "5000"
+        copy_file(
+            INSTALL_FILE_DIR / "eventproc.py",
+            data_dir / "bin/eventproc.py",
+            ml_user,
+            ml_group,
+            cfg_create_mode,
+        )
 
-        elif _inst_type == "client":
-            copy_file(
-                INSTALL_FILE_DIR / "EventStartCommand.sh",
-                data_dir / "bin/EventStartCommand.sh",
-                ml_user,
-                ml_group,
-                cfg_create_mode,
-            )
+        # create a symbolic link to both files in /usr/local/bin
+        # so that they can be called from anywhere
+        test_msg(
+            f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zmml_ESC (shell helper) zmml_eventproc (python script)",
+            "info",
+        )
 
-            copy_file(
-                INSTALL_FILE_DIR / "eventproc.py",
-                data_dir / "bin/eventproc.py",
-                ml_user,
-                ml_group,
-                cfg_create_mode,
-            )
+        if not testing:
+            # Make sure it does not exist first, it will error if file exists
+            _dest_esc = Path("/usr/local/bin/zmml_ESC")
+            _dest_ep = Path("/usr/local/bin/zmml_eventproc")
+            # if it exists log a message that it is being unlinked then symlinked again with specified user
 
-            # create a symbolic link to both files in /usr/local/bin
-            # so that they can be called from anywhere
-            test_msg(
-                f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zmml_ESC (shell helper) zmml_eventproc (python script)",
-                "info",
-            )
+            if _dest_esc.exists():
+                logger.warning(
+                    f"{_dest_esc} already exists, unlinking and symlinking again..."
+                )
+                _dest_esc.unlink()
+            _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
+            if _dest_ep.exists():
+                logger.warning(
+                    f"{_dest_ep} already exists, unlinking and symlinking again..."
+                )
+                _dest_ep.unlink()
+            _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
+        # Client install envs for envsubst cmd
+        if "ML_INSTALL_ROUTE_NAME" not in _ENV:
+            _ENV["ML_INSTALL_ROUTE_NAME"] = "DEFAULT FROM INSTALL <CHANGE ME!!!>"
+        if "ML_INSTALL_ROUTE_HOST" not in _ENV:
+            _ENV["ML_INSTALL_ROUTE_HOST"] = "127.0.0.1"
+        if "ML_INSTALL_ROUTE_PORT" not in _ENV:
+            _ENV["ML_INSTALL_ROUTE_PORT"] = "5000"
 
-            if not testing:
-                # Make sure it does not exist first, it will error if file exists
-                _dest_esc = Path("/usr/local/bin/zmml_ESC")
-                _dest_ep = Path("/usr/local/bin/zmml_eventproc")
-                # if it exists log a message that it is being unlinked then symlinked again with specified user
-
-                if _dest_esc.exists():
-                    logger.warning(
-                        f"{_dest_esc} already exists, unlinking and symlinking again..."
-                    )
-                    _dest_esc.unlink()
-                _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
-                if _dest_ep.exists():
-                    logger.warning(
-                        f"{_dest_ep} already exists, unlinking and symlinking again..."
-                    )
-                    _dest_ep.unlink()
-                _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
-            # Client install envs for envsubst cmd
-            if "ML_INSTALL_ROUTE_NAME" not in _ENV:
-                _ENV["ML_INSTALL_ROUTE_NAME"] = "DEFAULT FROM INSTALL <CHANGE ME!!!>"
-            if "ML_INSTALL_ROUTE_HOST" not in _ENV:
-                _ENV["ML_INSTALL_ROUTE_HOST"] = "127.0.0.1"
-            if "ML_INSTALL_ROUTE_PORT" not in _ENV:
-                _ENV["ML_INSTALL_ROUTE_PORT"] = "5000"
-
-            # todo: add support for interactive mode to specify mlapi route info and ZM api info.
-            #  this will allow to not edit config file after install
+        # todo: add support for interactive mode to specify mlapi route info and ZM api info.
+        #  this will allow to not edit config file after install
 
         _src: str = (
             f"{INSTALL_FILE_DIR.parent.expanduser().resolve().as_posix()}[{_inst_type}]"
@@ -1338,10 +1032,7 @@ def do_install(_inst_type: str):
             _f: Path = data_dir / "bin/eventproc.py"
             # if testing:
             #     _f = (INSTALL_FILE_DIR / "eventproc.py")
-        elif _inst_type == "server":
-            _f: Path = data_dir / "bin/mlapi.py"
-            # if testing:
-            #     _f = (INSTALL_FILE_DIR / "mlapi.py")
+
         if _f:
             test_msg(
                 f"Modifying {_f.as_posix()} to use VENV {_venv.context.env_exec_cmd} shebang"
@@ -1422,7 +1113,7 @@ class Envsubst:
     def _resolve_var(self, var_name, default=None):
         if not self.strict and default is None:
             # Instead of returning an empty string in strict mode,
-            # return the variable name formatted for ZM_ML substitution
+            # return the variable name formatted for zomi substitution
             default = f"${{{var_name}}}"
 
         if self.env:
@@ -1481,16 +1172,6 @@ def create_(_type: str, dest: Path):
         dest.expanduser().resolve().write_text(envsubst_out)
 
 
-def install_models(model_dir: Path, force: bool = False):
-    # walk the models directory and install all models
-    # if they dont exist or force is True
-    for path_object in model_dir.rglob("*"):
-        if path_object.is_file():
-            logger.debug(f"I'm a file: {path_object}")
-        elif path_object.is_dir():
-            logger.debug(f"I'm a dir: {path_object}")
-
-
 def in_venv():
     return hasattr(sys, "real_prefix") or (
         hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix
@@ -1501,10 +1182,11 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
     """
     Venv builder for ZoMi ML
 
-    :param cmd: The pip command as an array to install ZoMi ML..
+    :param cmd: The pip command as an array to install ZoMi ML.
     """
 
     install_cmd: List[str]
+    context = None
 
     def __init__(self, *args, **kwargs):
         self.install_cmd = kwargs.pop("cmd", None)
@@ -1532,7 +1214,7 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
 
     def install_zmml(self, context):
         """
-        Install zm_ml in the environment.
+        Install zomi in the environment.
         :param context: The information for the environment creation request
                         being processed.
         """
@@ -1583,24 +1265,25 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
                             msg += c
 
 
-if __name__ == "__main__":
-    # check python is 3.8+ only
-    import sys
-
-    if sys.version_info.major < 3:
+def check_python_version(maj: int, min: int):
+    if sys.version_info.major < maj:
         logger.error("Python 3+ is required to run this install script!")
         sys.exit(1)
-    if sys.version_info.minor not in [8, 9, 10, 11, 12, 13, 14, 15]:
-        logger.error("Python 3.8+ is required to run this install script!")
+    if sys.version_info.minor < min:
+        logger.error("Python 3.8+ is required!")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    # check python is 3.8+ only
+    check_python_version(3, 8)
 
     # parse args first
     args = parse_cli()
 
     logger.info(f"Starting install script...")
     if not check_imports():
-        msg = f"Missing python dependencies, exiting..."
-        logger.critical(msg)
+        logger.critical(f"Missing python dependencies, exiting...")
         sys.exit(1)
     else:
         logger.info("All python dependencies that this install script requires found.")
@@ -1624,15 +1307,14 @@ if __name__ == "__main__":
     tqdm_handler.setFormatter(log_formatter)
     logger.removeHandler(console)
     logger.addHandler(tqdm_handler)
-    models: List[str] = []
     testing: bool = args.test
     debug: bool = args.debug
-    # Let's create a venv for the install script to run in
+    # Let's create a venv for the installation script to run in
     if in_venv():
         logger.info(
             "Detected to be running in a virtual environment, "
             "be aware this install script creates "
-            "a venv for zm_ml to run in!"
+            "a venv for zomi to run in!"
         )
 
     install_log = args.install_log
@@ -1643,19 +1325,10 @@ if __name__ == "__main__":
         logger.setLevel(logging.DEBUG)
         for _handler in logger.handlers:
             _handler.setLevel(logging.DEBUG)
-        del _handler
         logger.debug("Debug logging enabled!")
     if testing:
         logger.warning(">>>>>>>>>>>>> Running in test/dry-run mode! <<<<<<<<<<<<<<<<")
-    models = args.models
-    no_models: bool = args.no_models
-    INSTALL_TYPE = args.install_type.strip().casefold()
-    if INSTALL_TYPE == "client":
-        logger.info("Installing client, no need for models on this run...")
-        args.no_models = no_models = True
-        args.models = models = []
 
-    force_models: bool = args.force_models
     system_create_mode: int = args.system_create_permissions
     cfg_create_mode: int = args.config_create_permissions
     interactive: bool = args.interactive
@@ -1676,12 +1349,12 @@ if __name__ == "__main__":
     route_name = args.route_name
     route_host = args.route_host
     route_port = args.route_port
-    model_dir: Optional[Path] = data_dir / "models"
+
     args.data_dir = data_dir = data_dir.expanduser().resolve()
     args.config_dir = cfg_dir = cfg_dir.expanduser().resolve()
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
-    ml_user, ml_group = args.ml_user or "", args.ml_group or ""
+    ml_user, ml_group = args.ml_user or "zomi", args.ml_group or "imoz"
     do_web_user()
     if not ml_user:
         logger.error(
@@ -1692,19 +1365,6 @@ if __name__ == "__main__":
     args.ml_group = ml_group
 
     show_config(args)
-
-    if INSTALL_TYPE == "server":
-        if args.all_models:
-            models = [str(x) for x in available_models.keys()]
-            logger.info(f"ALL MODELS requested:: Using all available models: {models}")
-        if args.model_dir:
-            model_dir = Path(args.model_dir)
-            logger.info(f"Using model directory: {model_dir}")
-        else:
-            logger.info(
-                f"No model directory specified, using default: {data_dir}/models"
-            )
-            model_dir = Path(f"{data_dir}/models")
 
     _ENV = {
         "ML_INSTALL_DATA_DIR": data_dir.as_posix(),
@@ -1717,7 +1377,6 @@ if __name__ == "__main__":
         "ML_INSTALL_LOGGING_SYSLOG_ENABLED": "no",
         "ML_INSTALL_LOGGING_SYSLOG_ADDRESS": "/dev/log",
         "ML_INSTALL_TMP_DIR": tmp_dir.as_posix() if tmp_dir else None,
-        "ML_INSTALL_MODEL_DIR": model_dir.as_posix() if model_dir else None,
         "ML_INSTALL_IMAGE_DIR": (data_dir / "images").as_posix(),
         "ML_INSTALL_CLIENT_ZM_API": zm_api,
         "ML_INSTALL_CLIENT_ZM_USER": zm_user,
@@ -1732,10 +1391,6 @@ if __name__ == "__main__":
 
     if args.env_file:
         parse_env_file(args.env_file)
-    if args.models_only:
-        logger.info(f"\n***Only installing models! ***\n")
-        get_models()
-        sys.exit(0)
     if args.config_only or args.secrets_only:
         secrets = False
         _cfg = False
@@ -1749,7 +1404,7 @@ if __name__ == "__main__":
         if secrets:
             create_("secrets", cfg_dir / "secrets.yml")
         if _cfg:
-            create_(INSTALL_TYPE, cfg_dir / f"{INSTALL_TYPE}.yml")
+            create_("client", cfg_dir / "client.yml")
         sys.exit(0)
 
     main()

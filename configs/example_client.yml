@@ -175,11 +175,11 @@ notifications:
 
     # - Allow you to set a custom MQTT topic name, formats for topics are: name/sub-name/sub-sub-name
     # - notice no leading or trailing '/'
-    # - Default topic: zm_ml
+    # - Default topic: zomi
     # - Be aware that the image and results are published under hard coded sub topics,
     # - this only apples to the root topic
 
-    root_topic: zm_ml
+    root_topic: zomi
 
 
     # - Send image to "<root_topic>/mid/<monitor ID>/image/<format>" where topic is the mqtt topic and format is either bytes or base64
@@ -601,7 +601,7 @@ detection_settings:
       # - 1 image has bounding boxes around the detected objects with info in the JSON file
       # - The other image is the unmodified original image (useful for testing or negative training)
       enabled: no
-      path: ${TMP_DIR}zm_ml/training_images
+      path: ${TMP_DIR}zomi/training_images
 
 
 matching:

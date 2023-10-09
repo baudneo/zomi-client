@@ -1,8 +1,5 @@
-#!/opt/zm_ml/data/venv/bin/python3
-#!/usr/bin/env python3
-
-
 from __future__ import annotations
+
 import logging.handlers
 import sys
 import time
@@ -12,24 +9,29 @@ from typing import Optional, TYPE_CHECKING
 import uvloop
 import asyncio
 
-import zm_ml
-from zm_ml.Shared.Models.validators import str2path
-from zm_ml.Shared.configs import GlobalConfig
-from zm_ml.Client.Models.config import ClientEnvVars
-from zm_ml.Client.main import (
+try:
+    import zomi_client
+except ImportError:
+    zomi_client = None
+    print("ZoMi Client library not installed! Please install zomi-client!")
+    sys.exit(1)
+
+from zomi_client.Shared.Models.validators import str2path
+from zomi_client.Shared.configs import GlobalConfig
+from zomi_client.Client.Models.config import ClientEnvVars
+from zomi_client.Client.main import (
     parse_client_config_file,
     create_global_config,
     create_logs,
 )
 
 if TYPE_CHECKING:
-    from zm_ml.Client.main import ZMClient
+    from zomi_client.Client.main import ZMClient
 
 __doc__ = """
 An example that uses ZM's EventStartCommand/EventEndCommand mechanism to run 
 object detection on a ZM event using ZoMi ML library.
 """
-__version__ = "0.0.1a5"
 # Setup basic console logging (hook into library logging)
 logger: logging.Logger = create_logs()
 zm_client: Optional[ZMClient] = None
@@ -60,9 +62,7 @@ def _parse_cli():
         dest="shm",
         help="Run in shared memory mode (Pulling images directly from SHM)",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+
     parser.add_argument("--config", "-C", help="Config file to use", type=Path)
     parser.add_argument(
         "--event-mode",
@@ -71,7 +71,6 @@ def _parse_cli():
         dest="event",
         help="Run in event mode (triggered by a ZM event)",
     )
-    # python3 ./zm_ml/examples/eventproc.py -E -e 1263 -m 7 -D -C /etc/zm/client.yml
     parser.add_argument(
         "--event-id",
         "--eid",
@@ -149,7 +148,7 @@ async def main():
         f"Config File: {cfg_file}"
     )
     g.config = parse_client_config_file(cfg_file)
-    zm_client = zm_ml.Client.main.ZMClient(global_config=g)
+    zm_client = zomi_client.Client.main.ZMClient(global_config=g)
     _end_init = time.perf_counter()
     __event_modes = ["event", ""]
     if _mode in __event_modes:
