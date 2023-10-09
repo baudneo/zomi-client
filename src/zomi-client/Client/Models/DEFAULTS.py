@@ -1,0 +1,12 @@
+DEF_CLNT_SYS_CONFDIR = "/opt/zomi-client/etc/zomi-client"
+DEF_CLNT_SYS_DATADIR = "/opt/zomi-client/var/lib/zomi-client"
+DEF_CLNT_SYS_TMPDIR = "/opt/zomi-client/var/tmp/zomi-client"
+DEF_CLNT_SYS_IMAGEDIR = "/opt/zomi-client/var/lib/zomi-client/images"
+DEF_CLNT_SYS_MODELDIR = "/opt/zomi-client/var/lib/zomi-client/models"
+DEF_CLNT_SYS_THREAD_WORKERS = 4
+DEF_CLNT_LOGGING_LEVEL = 20
+DEF_CLNT_LOGGING_CONSOLE_ENABLED = True
+DEF_CLNT_LOGGING_SYSLOG_ENABLED = False
+DEF_CLNT_LOGGING_FILE_ENABLED = True
+DEF_CLNT_LOGGING_FILE_PATH = "/opt/zomi-client/var/log/zm"
+DEF_CLNT_LOGGING_FILE_FILENAME_PREFIX = "zmml"
