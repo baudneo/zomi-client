@@ -28,7 +28,7 @@ DEFAULT_SYSTEM_CREATE_PERMISSIONS = 0o755
 DEFAULT_CONFIG_CREATE_PERMISSIONS = 0o755
 # default ML models to install (SEE: available_models{})
 REPO_BASE = Path(__file__).parent.parent
-INSTALL_FILE_DIR = Path(__file__).parent
+EXAMPLES_DIR = Path(__file__).parent
 _ENV = {}
 THREADS: Dict[str, Thread] = {}
 
@@ -876,11 +876,11 @@ def main():
 
 
 def do_install(_inst_type: str):
-    cfg_dir = Path("/home/baudneo/zm")
-    path_glob_out = cfg_dir.rglob(f"{_inst_type}.*")
-    files = [x for x in path_glob_out]
-    files = sorted(files, reverse=True)
+    global _ENV
+
+    files: List[Optional[Path]] = [x for x in cfg_dir.rglob(f"{_inst_type}.*")]
     if files:
+        files = sorted(files, reverse=True)
         _target: Optional[Path] = None
         backup_num = 1
         high = 0
@@ -888,7 +888,7 @@ def do_install(_inst_type: str):
             if _file.name.startswith(f"{_inst_type}"):
                 if _file.suffix == ".bak":
                     i = int(_file.stem.split(".")[-1])
-                    logger.debug(f"Found a backup numbered: {i}")
+                    logger.debug(f"Found a {_inst_type} backup numbered: {i}")
 
                     if i > high:
                         high = backup_num = i + 1
@@ -907,9 +907,10 @@ def do_install(_inst_type: str):
             # Backup existing
             copy_file(_target, file_backup, ml_user, ml_group, cfg_create_mode)
             # install new
+            # change target to f"{_inst_type}.yml"
             copy_file(
-                INSTALL_FILE_DIR.parent.parent / f"configs/example_{_inst_type}.yml",
-                _target,
+                REPO_BASE / f"configs/example_{_inst_type}.yml",
+                cfg_dir / f"{_inst_type}.yml",
                 ml_user,
                 ml_group,
                 cfg_create_mode,
@@ -918,7 +919,7 @@ def do_install(_inst_type: str):
     else:
         logger.debug(f"No existing {_inst_type} config files found!")
         if cfg_dir.is_dir() or testing:
-            test_msg(f"Creating {_inst_type} config file from example...", "info")
+            test_msg(f"Creating {_inst_type} config file from example template...", "info")
             copy_file(
                 REPO_BASE / f"configs/example_{_inst_type}.yml",
                 cfg_dir / f"{_inst_type}.yml",
@@ -930,7 +931,7 @@ def do_install(_inst_type: str):
             logger.warning(
                 f"Config directory '{cfg_dir}' does not exist, skipping creation of {_inst_type} config file..."
             )
-    global _ENV
+
     _pip_prefix: List[str] = [
         # "python3",  # The venv builder will prepend the venv python executable
         "-m",
@@ -940,6 +941,7 @@ def do_install(_inst_type: str):
         # "--report",
         # "./pip_install_report.json",
     ]
+
     if args.no_cache:
         logger.info("Disabling pip cache...")
         _pip_prefix.append("--no-cache-dir")
@@ -949,12 +951,12 @@ def do_install(_inst_type: str):
             " directory after install! git pull will update the installed package"
         )
         _pip_prefix.append("--editable")
-    if _inst_type != "secrets":
+
+    if _inst_type == "client":
         install_host_dependencies(_inst_type)
         logger.info(f"Installing '{_inst_type}' specific files...")
-    if _inst_type == "client":
         copy_file(
-            INSTALL_FILE_DIR / "EventStartCommand.sh",
+            EXAMPLES_DIR / "EventStartCommand.sh",
             data_dir / "bin/EventStartCommand.sh",
             ml_user,
             ml_group,
@@ -962,7 +964,7 @@ def do_install(_inst_type: str):
         )
 
         copy_file(
-            INSTALL_FILE_DIR / "eventproc.py",
+            EXAMPLES_DIR / "eventproc.py",
             data_dir / "bin/eventproc.py",
             ml_user,
             ml_group,
@@ -984,56 +986,51 @@ def do_install(_inst_type: str):
 
             if _dest_esc.exists():
                 logger.warning(
-                    f"{_dest_esc} already exists, unlinking and symlinking again..."
+                    f"{_dest_esc} already exists, unlinking and sym-linking again..."
                 )
                 _dest_esc.unlink()
             _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
             if _dest_ep.exists():
                 logger.warning(
-                    f"{_dest_ep} already exists, unlinking and symlinking again..."
+                    f"{_dest_ep} already exists, unlinking and sym-linking again..."
                 )
                 _dest_ep.unlink()
             _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
-        # Client install envs for envsubst cmd
+
         if "ML_INSTALL_ROUTE_NAME" not in _ENV:
             _ENV["ML_INSTALL_ROUTE_NAME"] = "DEFAULT FROM INSTALL <CHANGE ME!!!>"
         if "ML_INSTALL_ROUTE_HOST" not in _ENV:
             _ENV["ML_INSTALL_ROUTE_HOST"] = "127.0.0.1"
         if "ML_INSTALL_ROUTE_PORT" not in _ENV:
             _ENV["ML_INSTALL_ROUTE_PORT"] = "5000"
-
-        # todo: add support for interactive mode to specify mlapi route info and ZM api info.
-        #  this will allow to not edit config file after install
+        if "ML_INSTALL_ROUTE_USER" not in _ENV:
+            _ENV["ML_INSTALL_ROUTE_USER"] = "zomi"
+        if "ML_INSTALL_ROUTE_PASS" not in _ENV:
+            _ENV["ML_INSTALL_ROUTE_PASS"] = "imoz"
 
         _src: str = (
-            f"{INSTALL_FILE_DIR.parent.expanduser().resolve().as_posix()}[{_inst_type}]"
+            f"{REPO_BASE.expanduser().resolve().as_posix()}"
         )
-        ran: Optional[subprocess.CompletedProcess] = None
 
         create_("secrets", cfg_dir / "secrets.yml")
         create_(_inst_type, cfg_dir / f"{_inst_type}.yml")
+
         if testing:
             _pip_prefix.append("--dry-run")
-
-        # Add the source dir to the pip install command
         _pip_prefix.append(_src)
-        logger.info(
-            f"This may appear frozen for a good amount of time, the venv is being installed and "
-            f"many packages are being built. Please be patient... 5+ minutes is not uncommon."
-        )
-        # create venv, upgrade pip and setup tools and install ZoMi ML into the venv
         _venv = ZoMiEnvBuilder(
-            with_pip=True, cmd=_pip_prefix, upgrade_deps=True, prompt="ZoMi_ML"
+            with_pip=True, cmd=_pip_prefix, upgrade_deps=True, prompt="ZoMi_Client"
         )
         _venv.create(venv_dir)
-        content: Optional[str] = None
-        _f: Optional[Path] = None
+
         if _inst_type == "client":
+            _f: Optional[Path] = None
+            content: Optional[str] = None
             _f: Path = data_dir / "bin/eventproc.py"
+            if not _f.is_absolute():
+                _f = _f.expanduser().resolve()
             # if testing:
             #     _f = (INSTALL_FILE_DIR / "eventproc.py")
-
-        if _f:
             test_msg(
                 f"Modifying {_f.as_posix()} to use VENV {_venv.context.env_exec_cmd} shebang"
             )
@@ -1182,7 +1179,7 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
     """
     Venv builder for ZoMi ML
 
-    :param cmd: The pip command as an array to install ZoMi ML.
+    :param cmd: The pip command as an array to install ZoMi Client.
     """
 
     install_cmd: List[str]
@@ -1206,13 +1203,13 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
         self.context = context
         old_env = os.environ.get("VIRTUAL_ENV", None)
         os.environ["VIRTUAL_ENV"] = context.env_dir
-        self.install_zmml(context)
+        self.install_zomi_client(context)
         if old_env:
             os.environ["VIRTUAL_ENV"] = old_env
         else:
             os.environ.pop("VIRTUAL_ENV")
 
-    def install_zmml(self, context):
+    def install_zomi_client(self, context):
         """
         Install zomi in the environment.
         :param context: The information for the environment creation request
@@ -1226,11 +1223,6 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
         )
 
         try:
-            # ran = subprocess.run(
-            #     self.install_cmd,
-            #     capture_output=True,
-            #     text=True,
-            # )
             ran = subprocess.Popen(self.install_cmd, stdout=subprocess.PIPE)
 
         except subprocess.CalledProcessError as e:
@@ -1243,15 +1235,9 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
             raise e
         else:
             if ran:
-                # if ran.stdout:
-                #     logger.info(f"\n{ran.stdout}")
-                # if ran.stderr:
-                #     logger.error(f"\n{ran.stderr}")
                 msg = ""
                 for c in iter(lambda: ran.stdout.read(1), b""):
                     sys.stdout.buffer.write(c)
-                    # UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe2 in position 0: unexpected end of data
-                    # deal with unexpected end of data
                     try:
                         c = c.decode("utf-8")
                     except UnicodeDecodeError:
