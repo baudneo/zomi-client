@@ -759,7 +759,7 @@ class ZMClient:
             )
 
             await self._get_db_data(eid)
-            # Check that the cause from db has "Motion" or "Trigger" in it
+            # Check that the cause from db has "Motion", "ONVIF" or "Trigger" in it
             if g.config.detection_settings.motion_only is True:
                 cause = self.db.cause_from_eid(eid)
                 _cont = True
@@ -767,8 +767,9 @@ class ZMClient:
                     if (
                         cause.find("Motion") == -1
                         and cause.find("Trigger") == -1
-                        and cause.find("ONVIF")
+                        and cause.find("ONVIF") == -1
                     ):
+
                         _cont = False
                     else:
                         _cont = True
@@ -1133,29 +1134,10 @@ class ZMClient:
                         logger.debug(
                             f"There are {len(result.results)} UNFILTERED Results from model: {result.name} for image '{image_name}'"
                         )
-                        if result.extra_image_data:
-                            logger.debug(
-                                f"There is extra image data in the result: {result.extra_image_data}"
-                            )
-                            if "virel" in result.extra_image_data:
-                                from zomi_client.Server.ML.Detectors.virelai import (
-                                    VirelAI,
-                                )
 
-                                _v = VirelAI()
-                                _v.logger(logger)
-                                logger.debug(
-                                    f"virelAI quirk: grab annotated image from their secondary API"
-                                )
-                                image = _v.get_image(image)
-                                del _v
-                                # write to file
-                                # cv2.imwrite(f'/tmp/virel.jpg', image)
-                            filtered_result = result
-                        elif not result.extra_image_data:
-                            filtered_result = await self.filter_detections(
-                                result, image_name
-                            )
+                        filtered_result = await self.filter_detections(
+                            result, image_name
+                        )
                         # check strategy
                         strategy: MatchStrategy = g.config.matching.strategy
                         if filtered_result.success is True:
@@ -1309,7 +1291,6 @@ class ZMClient:
         **kwargs,
     ) -> List[Result]:
         """Filter detections using 2 loops, first loop is filter by object label, second loop is to filter by zone."""
-        from ..Server.Models.config import ModelType
         from ..Shared.Models.config import Result
 
         zones = self.zones.copy()
@@ -1457,7 +1438,7 @@ class ZMClient:
                             logger.debug(
                                 f"{lp} matched ReGex pattern [{pattern.pattern}] ALLOWING..."
                             )
-                            if type_ == ModelType.FACE:
+                            if type_ == 'face':
                                 # logger.debug(
                                 #     f"DBG>> This model is typed as {type_} is not OBJECT, skipping non face filters like min_conf, total_max_area, etc."
                                 # )
@@ -1470,7 +1451,7 @@ class ZMClient:
                                     f"{lp} {confidence} IS GREATER THAN OR EQUAL TO "
                                     f"min_conf={type_filter.min_conf}, ALLOWING..."
                                 )
-                                if type_ == ModelType.ALPR:
+                                if type_ == 'alpr':
                                     # logger.debug(
                                     #     f"DBG>> This model is typed as {type_} is not OBJECT, skipping non alpr filters like total_max_area, etc."
                                     # )
@@ -2430,12 +2411,13 @@ class ZMClient:
         if old_notes is not None and g.config.zoneminder.misc.write_notes:
             if new_notes != old_notes:
                 try:
-                    events_url = f"{g.api.api_url}/events/{g.eid}.json"
-                    await g.api.make_async_request(
-                        url=events_url,
-                        payload={"Event[Notes]": new_notes},
-                        type_action="put",
-                    )
+                    # events_url = f"{g.api.api_url}/events/{g.eid}.json"
+                    # await g.api.make_async_request(
+                    #     url=events_url,
+                    #     payload={"Event[Notes]": new_notes},
+                    #     type_action="put",
+                    # )
+                    g.db.set_event_notes(g.eid, new_notes)
                 except Exception as custom_push_exc:
                     logger.error(
                         f"{lp} error during notes update API put request-> {custom_push_exc}"
@@ -2446,5 +2428,36 @@ class ZMClient:
                     )
             elif new_notes == old_notes:
                 logger.debug(f"{lp} notes do not need updating!")
+
+        # Check version of zm, if 1.37.44 or greater, we can manage tags
+        zm_ver = g.db.get_zm_version()
+        tags_support = False
+        if zm_ver.major == 1:
+            if zm_ver.minor == 37:
+                if zm_ver.patch >= 44:
+                    tags_support = True
+            elif zm_ver.minor > 37:
+                tags_support = True
+        elif zm_ver.major > 1:
+            tags_support = True
+
+        if tags_support:
+            # check that the detected object label has a tag created
+
+
+            # check if the event has tags
+            tags = g.db.get_event_tags(g.eid)
+            if tags:
+                # check if the event has the detected labels tag
+                if "detected" not in tags:
+                    # add the detected tag
+                    tags.append("detected")
+                    g.db.set_event_tags(g.eid, tags)
+            else:
+                # add the detected tag
+                tags = ["detected"]
+                g.db.set_event_tags(g.eid, tags)
+
+
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)

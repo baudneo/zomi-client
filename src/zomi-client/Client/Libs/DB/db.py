@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import glob
 import logging
 import time
+from collections import namedtuple
 from configparser import ConfigParser, SectionProxy
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional, Union, Tuple, TYPE_CHECKING, Any, Dict, List
+from typing import Optional, Union, Tuple, TYPE_CHECKING, Any, Dict, List, NamedTuple
 import warnings
 
-import pydantic.version
 from pydantic import SecretStr
 
 try:
@@ -34,13 +33,15 @@ from ...Models.config import ZMDBSettings, ClientEnvVars
 if TYPE_CHECKING:
     from ....Shared.configs import GlobalConfig
 
-    # from sqlalchemy import MetaData, create_engine, select
-    # from sqlalchemy.engine import Engine, Connection, CursorResult, ResultProxy
-    # from sqlalchemy.exc import SQLAlchemyError
-
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 LP = "zmdb::"
 g: Optional[GlobalConfig] = None
+
+
+class ZMVersion(NamedTuple):
+    major: int
+    minor: int
+    patch: int
 
 
 class ZMDB:
@@ -95,6 +96,35 @@ class ZMDB:
             f"perf:{LP} get_all_event_data() took {time.perf_counter() - s:.5f} seconds"
         )
 
+    def get_zm_version(self) -> ZMVersion:
+        """"""
+        _select: select = select(self.meta.tables["Config"].c.Value).where(
+            self.meta.tables["Config"].c.Name == "ZM_DYN_CURR_VERSION"
+        )
+        result: CursorResult = self.run_select(_select)
+        for row in result:
+            zm_version = row[0]
+
+        zm_version = zm_version.split(".")
+        nt = ZMVersion
+        zm_version = nt(major=int(zm_version[0]), minor=int(zm_version[1]), patch=int(zm_version[2]))
+        return zm_version
+
+    def get_db_version(self):
+        _select: select = select(self.meta.tables["Config"].c.Value).where(
+            self.meta.tables["Config"].c.Name == "ZM_DYN_DB_VERSION"
+        )
+        result: CursorResult = self.run_select(_select)
+        for row in result:
+            db_version = row[0]
+        return db_version
+
+    def set_notes(self, eid: int, notes: str):
+        _update = self.meta.tables["Events"].update().where(
+            self.meta.tables["Events"].c.Id == eid
+        ).values(Notes=notes)
+        self.connection.execute(_update)
+
     def event_frames_len(self) -> Optional[int]:
         _select: select = select(self.meta.tables["Events"].c.Frames).where(
             self.meta.tables["Events"].c.Id == g.eid
@@ -145,7 +175,7 @@ class ZMDB:
         files = []
         conf_path = self.env.zm_conf_dir
         if conf_path.is_dir():
-            for fi in glob.glob(f"{conf_path}/conf.d/*.conf"):
+            for fi in Path(f"{conf_path}/conf.d").glob("*.conf"):
                 files.append(fi)
             files.sort()
             files.insert(0, f"{conf_path}/zm.conf")

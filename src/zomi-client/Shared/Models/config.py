@@ -96,10 +96,9 @@ class DetectionResults(BaseModel, arbitrary_types_allowed=True):
     type: ModelType = Field(...)
     processor: ModelProcessor = Field(...)
     results: Optional[List[Result]] = Field(None)
-    removed: Optional[List[Result]] = Field(None)
+    removed_by_filters: Optional[List[Result]] = Field(None)
 
     image: Optional[np.ndarray] = Field(None, repr=False)
-    # Flag that annotated image needs to be grabbed by other means (virel.ai)
     extra_image_data: Optional[Dict[str, Any]] = Field(None, repr=False)
 
     def get_labels(self) -> List[Optional[str]]:

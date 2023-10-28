@@ -1,7 +1,7 @@
 
 ########################################################################
 # ${ML_INSTALL_ prepended variables are replaced during installation   #
-# DO NOT REMOVE THEM!                                                  #
+# DO NOT REMOVE THEM! This file is used as a template for installation #
 ########################################################################
 substitutions:
   # - Substitutions can be used like BASH variables
@@ -21,6 +21,8 @@ substitutions:
   # - Make sure to quote the port number to force it to be a string
   # - leaving the number unquoted will raise a validation error
   ROUTE_PORT: "${ML_INSTALL_CLIENT_ROUTE_PORT}"
+  ROUTE_USER: ${ML_INSTALL_CLIENT_ROUTE_USER}
+  ROUTE_PASS: ${ML_INSTALL_CLIENT_ROUTE_PASS}
 
   # - This file contains substitutions that will be imported into this file (secrets)
   # - NOTE: The 'IncludeFile' directive must be contained in the 'substitutions' section
@@ -33,20 +35,19 @@ THIS IS AN EXAMPLE:
   of substitution variables: "Hello, ${EXAMPLE}"
 
 system:
-  # - Override the default config path [/etc/zm]
+  # - Override the default config path [/opt/zomi/client/conf]
   config_path: ${CFG_DIR}
-  # - Path where the system will store variable data [/opt/zmml/data]
+  # - Path where the system will store variable data [/opt/zomi/client]
   variable_data_path: ${DATA_DIR}
   # - Path where temp files will be stored, leave empty to auto-detect
   tmp_path: ${TMP_DIR}
   #  - Path to where any images will be stored
   image_dir: ${IMAGE_DIR}
-  # - Path to where ZoMi ML will install/source its python environment
+  # - Path to where ZoMi Client will install/source its python environment
   venv_dir: ${VENV_DIR}
 
   # - Maximum parallel threaded processes (set to cores)
   thread_workers: 4
-
 
 
 zoneminder:
@@ -55,20 +56,17 @@ zoneminder:
   api:
     # - The ZM API URL (https://zm.myDomain.com/zm/api , http://localhost/zm/api, etc.)
     api_url: ${ZM_API}
-    # - If you have authentication, set the user and password
+    # - If you have authentication enabled for youre ZM instance,
+    # - set the user and password
     user: ${ZM_USER}
     password: ${ZM_PASS}
     # - A value of 'no' will allow self-signed certs
     ssl_verify: no
-    cloudflare_zta:
-      enabled: no
 
-      
     headers:
       # - Add custom headers to all portal and api requests
       # - Name-Of-Header: Value Of Header
       # - NOTE: The 'Authorization' header is automatically added if you have a user and password set
-      
 
   misc:
     # - Write detection results to the 'Notes' section if the trigger is an event
@@ -76,6 +74,9 @@ zoneminder:
     write_notes: yes
 
   db:
+    # - To automatically get db info from zm .conf files,
+    # - set this to the correct path and leave the below values commented out
+    zm_conf_dir: ${ZM_CONF_DIR}
     # - You only need to configure this in extreme cases.
     # - Default: the system will first look in ENV,
     # - then look in ZM .conf files,
@@ -119,8 +120,8 @@ logging:
     #level: debug
     # - Directory where log files will be stored
     path: ${LOGGING_DIR}
-    # - Prefix logname with this string, 'zmml' will become zmml_m1.log for monitor 1
-    filename_prefix: zmmlC
+    # - Prefix logname with this string, 'abc' will become abc_m1.log for monitor 1
+    filename_prefix: zomi-client
     # - Do not suffix logs with monitor id, log everything to a single file (Leave blank to disable)
     # - If this has a value, filename_prefix is ignored.
     file_name:
@@ -130,39 +131,9 @@ logging:
 
 mlapi:
   name: ${ROUTE_NAME}
-  weight: 0  # Lower takes precedence
   host: ${ROUTE_HOST}  # IP or hostname (add https:// if TLS encrypted)
   port: ${ROUTE_PORT}
   timeout: 60  # Default: 90
-  # The user and password are used to authenticate with the ML API
-  username: ${MLAPI_USER}
-  password: ${MLAPI_PASS}
-
-########################
-# ANIMATIONS ARE WIP
-# NOTE: PushOver may or may not play .gif files
-# I dont know if Gotify does (will update after testing)
-# Apple plays MP4
-# I think zmninja notifications may work and may play .gif files on android
-########################
-animations:
-  mp4: no
-  gif: no
-  # - Make a 'sped-up' version of the gif (makes the gif show more of an event)
-  fast_gif: yes
-  # - If you are on a low memory system, write frame buffer to disk instead of holding it in memory
-  # - Slower but takes less memory.
-  low_memory: no
-  # - If an animation file already exists, overwrite it
-  overwrite: no
-  # - Maximum width of the animation (Scaled properly)
-  ## - NOTE: The animation can only be so big if you want it to be displayed in a push notification!
-  width: 640
-
-  # - If the API is being used for an event,
-  # - set attempts and delays between attempts at grabbing frames.
-  max_attempts: 3
-  attempt_delay: 3
 
 
 notifications:
@@ -656,10 +627,12 @@ matching:
 
 monitors:
 # - Override settings based on which monitor an event was triggered by
+# - This is where most of the powerful stuff happens. Filtering to get the results you want to be notified about.
+# - You can override almost all settings on a per monitor basis.
   999999999901:  # Monitor ID
     # - Override global models for this monitor
     models:
-      # - Models to run. Name must match the name of the model obtained from its configuration from the ZM ML server (MLAPI)
+      # - Models to run. Name must match the name of the model obtained from its configuration from the ZoMi ML server (MLAPI)
       # - names are lower cased but, spaces are preserved
       yolov4:
         enabled: yes  # Default and implied. Can be omitted.
@@ -674,7 +647,7 @@ monitors:
     static_objects:
       enabled: no
       # - Difference in area between current and previous detection
-      difference: 69%
+      difference: 68%
       labels:
         - car
       #ignore_labels:

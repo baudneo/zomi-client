@@ -4,17 +4,18 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "zomi-client"
+name = "zomi_client"
 version = "0.0.1a5"
 dependencies = [
     # We install into its own Venv,
-#    if the user has opencvv with CUDA they can override themselves
-    "opencv-contrib-python-headless==4.8.1.78",
+    # if the user has opencv with CUDA they can override themselves
+    "opencv-contrib-python-headless>=4.8.1.78",
+    'prometheus-client==0.17.1',
     "numpy>=1.21.4",
     "python-jose>=3.3.0",
     "pyyaml>=6.0",
-    "cryptography==41.0.0",
-    "psutil==5.9.4",
+    "cryptography==421.0.0",
+    "psutil==5.9.401",
     "psutil-extra==0.2.0",
     "sqlalchemy==1.4.42",
     "pymysql==1.0.2",
@@ -54,8 +55,7 @@ classifiers = [
 "Repository" = "https://github.com/baudneo/zomi-client"
 "Bug Tracker" = "https://github.com/baudneo/zomi-client/issues"
 
-
-[project.optional-dependencies]
+#[project.optional-dependencies]
 
 
 

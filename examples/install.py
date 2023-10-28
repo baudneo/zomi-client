@@ -160,6 +160,8 @@ def parse_cli():
     global args
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--api-user", help="API user", type=str, default=None, dest="api_user")
+    parser.add_argument("--api-pass", help="API password", type=str, default=None, dest="api_pass")
     parser.add_argument(
         "--no-cache-dir",
         action="store_true",
@@ -997,16 +999,16 @@ def do_install(_inst_type: str):
                 _dest_ep.unlink()
             _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
 
-        if "ML_INSTALL_ROUTE_NAME" not in _ENV:
-            _ENV["ML_INSTALL_ROUTE_NAME"] = "DEFAULT FROM INSTALL <CHANGE ME!!!>"
-        if "ML_INSTALL_ROUTE_HOST" not in _ENV:
-            _ENV["ML_INSTALL_ROUTE_HOST"] = "127.0.0.1"
-        if "ML_INSTALL_ROUTE_PORT" not in _ENV:
-            _ENV["ML_INSTALL_ROUTE_PORT"] = "5000"
-        if "ML_INSTALL_ROUTE_USER" not in _ENV:
-            _ENV["ML_INSTALL_ROUTE_USER"] = "zomi"
-        if "ML_INSTALL_ROUTE_PASS" not in _ENV:
-            _ENV["ML_INSTALL_ROUTE_PASS"] = "imoz"
+        if "ML_INSTALL_CLIENT_ROUTE_NAME" not in _ENV:
+            _ENV["ML_INSTALL_CLIENT_ROUTE_NAME"] = "DEFAULT FROM INSTALL <CHANGE ME!!!>"
+        if "ML_INSTALL_CLIENT_ROUTE_HOST" not in _ENV:
+            _ENV["ML_INSTALL_CLIENT_ROUTE_HOST"] = "127.0.0.1"
+        if "ML_INSTALL_CLIENT_ROUTE_PORT" not in _ENV:
+            _ENV["ML_INSTALL_CLIENT_ROUTE_PORT"] = "5000"
+        if "ML_INSTALL_CLIENT_ROUTE_USER" not in _ENV:
+            _ENV["ML_INSTALL_CLIENT_ROUTE_USER"] = "zomi"
+        if "ML_INSTALL_CLIENT_ROUTE_PASS" not in _ENV:
+            _ENV["ML_INSTALL_CLIENT_ROUTE_PASS"] = "imoz"
 
         _src: str = (
             f"{REPO_BASE.expanduser().resolve().as_posix()}"
@@ -1255,9 +1257,10 @@ def check_python_version(maj: int, min: int):
     if sys.version_info.major < maj:
         logger.error("Python 3+ is required to run this install script!")
         sys.exit(1)
-    if sys.version_info.minor < min:
-        logger.error("Python 3.8+ is required!")
-        sys.exit(1)
+    elif sys.version_info.major == maj:
+        if sys.version_info.minor < min:
+            logger.error(f"Python {maj}.{min}+ is required!")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -1325,6 +1328,8 @@ if __name__ == "__main__":
     venv_dir: Path = data_dir / "venv"
     zm_user = args.zm_user
     zm_pass = args.zm_pass
+    api_user = args.api_user
+    api_pass = args.api_pass
     zm_portal = args.zm_portal
     zm_api = args.zm_api
     if zm_portal and not zm_api:
@@ -1368,11 +1373,11 @@ if __name__ == "__main__":
         "ML_INSTALL_CLIENT_ZM_USER": zm_user,
         "ML_INSTALL_CLIENT_ZM_PASS": zm_pass,
         "ML_INSTALL_CLIENT_ZM_PORTAL": zm_portal,
+        "ML_INSTALL_CLIENT_ROUTE_USER": api_user,
+        "ML_INSTALL_CLIENT_ROUTE_PASS": api_pass,
         "ML_INSTALL_CLIENT_ROUTE_NAME": route_name,
         "ML_INSTALL_CLIENT_ROUTE_HOST": route_host,
         "ML_INSTALL_CLIENT_ROUTE_PORT": route_port,
-        "ML_INSTALL_SERVER_ADDRESS": route_host,
-        "ML_INSTALL_SERVER_PORT": route_port,
     }
 
     if args.env_file:
