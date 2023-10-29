@@ -33,14 +33,14 @@ python3 -m pip install --upgrade pip
 
 - ZoneMinder 1.37.5+ (*EventStartCommand* is **REQUIRED**)
   - debian based distros can [build a .deb package for the 1.37 dev branch](https://gist.github.com/baudneo/d352c5a944a5d1371c9dfe455056e0a2)
-- Python 3.8+ (3.9 recommended) **[3.10+ DOES NOT SUPPORT TPU ATM]** - See: 
+- Python 3.8+ (3.10+ recommended) 
 - Python packages required by the [install script](examples/install.py)
   - `psutil`
   - `request`
   - `tqdm`
   - `distro`
 - OpenCV (Contrib) 4.2.0+ (4.8.0+ recommended) with Python3 bindings.
-  - *OpenCV is not installed by default due to possible GPU acceleration by user compiled OpenCV.* 
+  - *OpenCV (`opencv-contrib-python-headless`) is installed by default into the programs venv dir, advanced users can instead uninstall it and link in their CUDA compiled OpenCV* 
 
 ### Notes:
 
@@ -50,12 +50,16 @@ python3 -m pip install --upgrade pip
 The client uses the new ZoneMinder EventStartCommand/EventEndCommand option.
 This means ZM kicks off the ML chain instead of the ML chain scanning SHM looking for an event, more efficient!
 
-The client grabs images, sends the images to a ZoMi ML API server, filters detected responses, post processes images and sends notifications. All the heavy computation of ML models is done by the server!
+The client grabs images, sends the images to a ZoMi ML API server, filters detected responses, post processes images and sends notifications. All the heavy computation of ML models is done by the server.
 
 
 ## Client Pre-requisites
 - Client **MUST** be installed on same host as ZM server. Multi-server ZM installs (untested) will require a client install on each server.
-- OpenCV is **_REQUIRED_** for image processing, you can use `opencv-contrib-python` if you do not need GPU acceleration.
 - `libgeos-dev` : system package (used for the Shapely python module; Polygons)
-- `gifsicle` : system package (used to optimize GIFs; makes file size much smaller)
-- 
+
+# Install
+## Install Script
+The [install script](examples/install.py) will install the client for you. It will also install the required python packages into its own venv.
+You can supply the script with options to configure the install. Below is a list of the options and their defaults.
+
+## Install Script Options

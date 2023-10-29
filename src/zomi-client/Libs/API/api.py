@@ -8,6 +8,7 @@ import time
 from typing import Dict, List, Optional, Union, Tuple, TYPE_CHECKING
 import warnings
 from ...Log import CLIENT_LOGGER_NAME
+
 logger: logging.Logger = logging.getLogger(CLIENT_LOGGER_NAME)
 
 try:
@@ -33,18 +34,17 @@ except ImportError as e:
     disable_warnings: Optional[disable_warnings] = None
     InsecureRequestWarning: Optional[InsecureRequestWarning] = None
 
-
-
 from ...Models.config import ZoneMinderSettings, MonitorsSettings
 
 if TYPE_CHECKING:
-    from ....Shared.configs import GlobalConfig
+    from ...Models.config import GlobalConfig
     import aiohttp
     from pydantic import SecretStr
     from requests import Response, Session
     from requests.exceptions import HTTPError, JSONDecodeError
     from urllib3 import disable_warnings
     from urllib3.exceptions import InsecureRequestWarning
+
 
 GRACE: int = 60 * 5  # 5 mins
 lp: str = "api::"
@@ -635,7 +635,6 @@ class ZMAPI:
     ):
         lp: str = f"api::async {type_action}::"
         if not self.async_session:
-
             self.async_session = aiohttp.ClientSession()
         ssl = self.config.ssl_verify
         if ssl is not False:
@@ -659,7 +658,9 @@ class ZMAPI:
                 if content_length is not None:
                     content_length = int(content_length)
                 cloudflare = resp.headers.get("Server", "").startswith("cloudflare")
-                transfer_encoding = resp.headers.get("Transfer-Encoding", "chunked" if not content_length else None)
+                transfer_encoding = resp.headers.get(
+                    "Transfer-Encoding", "chunked" if not content_length else None
+                )
 
                 if content_type.startswith("application/json"):
                     # JSON data
@@ -683,9 +684,7 @@ class ZMAPI:
                         boundary = b"--" + boundary
 
                     if transfer_encoding == "chunked":
-                        logger.debug(
-                            f"{lp} iterating chunks"
-                        )
+                        logger.debug(f"{lp} iterating chunks")
                         chunk_size = 1024
                         _resp = b""
                         _begin = False
@@ -713,7 +712,9 @@ class ZMAPI:
 
                             _resp += chunk
                     else:
-                        logger.debug(f"DBG FOR ZMS >>>>> non chunked response! doing a read()")
+                        logger.debug(
+                            f"DBG FOR ZMS >>>>> non chunked response! doing a read()"
+                        )
                         _resp = await resp.read()
                     # split out nph headers from response
                     # example_response = b"Content-Type: image/jpeg\r\nContent-Length: 373781\r\n\r\n\xff\xd8\xff\xe0"
@@ -726,14 +727,16 @@ class ZMAPI:
                         # b'--ZoneMinderFrame\r\nContent-Typ
                         #   e: image/jpeg\r\nContent-Length: 134116\r\n\r\n\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xdb\x00C\x00\n\
                         #   x07\x07\x08'
-                        if _resp.startswith(b'Content-Type: image/jpeg'):
+                        if _resp.startswith(b"Content-Type: image/jpeg"):
                             split_resp = _resp.split(b"\r\n\r\n")
                             # logger.debug(f"{lp} stripping out nph headers from response - {len(split_resp) = }")
-                            if len(split_resp)>= 2:
+                            if len(split_resp) >= 2:
                                 nph_headers, _resp = split_resp[:2]
                                 if nph_headers:
                                     nph_headers = {
-                                        x.decode().split(": ")[0]: x.decode().split(": ")[1]
+                                        x.decode()
+                                        .split(": ")[0]: x.decode()
+                                        .split(": ")[1]
                                         for x in nph_headers.split(b"\r\n")
                                         if x
                                     }
@@ -744,7 +747,9 @@ class ZMAPI:
                                         content_type = nph_headers["Content-Type"]
 
                                     if "Content-Length" in nph_headers:
-                                        content_length = int(nph_headers["Content-Length"])
+                                        content_length = int(
+                                            nph_headers["Content-Length"]
+                                        )
                     else:
                         # logger.warning(f"{lp} no response from ZMS CGI? {_resp = }")
                         pass
@@ -787,7 +792,6 @@ class ZMAPI:
                 logger.error(f"{lp} Generic Exception: {err}", exc_info=True)
 
             else:
-
                 # logger.debug(
                 #     f"{lp} RESPONSE RECEIVED>>> CloudFlare={cloudflare} | {content_type=} | {content_length=}"
                 #     f"\n\n HEADERS = {resp.headers}"

@@ -31,7 +31,7 @@ from ...Log import CLIENT_LOGGER_NAME
 from ...Models.config import ZMDBSettings, ClientEnvVars
 
 if TYPE_CHECKING:
-    from ....Shared.configs import GlobalConfig
+    from ...Models.config import GlobalConfig
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 LP = "zmdb::"

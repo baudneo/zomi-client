@@ -1,44 +1,93 @@
 import logging
 import re
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Tuple, Pattern, Union, Any, Optional
 
+import numpy as np
 from pydantic import (
     BaseModel,
     Field,
     AnyUrl,
     field_validator,
-    FieldValidationInfo,
     IPvAnyAddress,
     SecretStr,
-    computed_field,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .Enums import ModelProcessor, ModelType
 from .validators import (
     validate_percentage_or_pixels,
     validate_resolution,
     validate_points,
-)
-from ...Shared.Models.validators import (
     validate_no_scheme_url,
     validate_file,
     validate_dir,
-    validate_not_enabled,
+    validate_log_level,
+    str2path,
     validate_enabled,
-)
-from ...Shared.Models.config import (
-    Testing,
-    DefaultEnabled,
-    DefaultNotEnabled,
-    LoggingSettings,
+    validate_not_enabled,
 )
 from ..Log import CLIENT_LOGGER_NAME
 from ..Models.DEFAULTS import *
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
+
+
+class Testing(BaseModel):
+    enabled: bool = Field(False)
+    substitutions: Dict[str, str] = Field(default_factory=dict)
+
+
+class DefaultEnabled(BaseModel):
+    enabled: bool = Field(True)
+
+    _v = field_validator("enabled", mode="before")(validate_enabled)
+
+
+class DefaultNotEnabled(BaseModel):
+    enabled: bool = Field(False)
+
+    _v = field_validator("enabled", mode="before")(validate_not_enabled)
+
+
+class LoggingLevelBase(BaseModel):
+    level: Optional[int] = None
+
+    _validate_log_level = field_validator("level", mode="before")(validate_log_level)
+
+
+class LoggingSettings(LoggingLevelBase):
+    class ConsoleLogging(DefaultEnabled, LoggingLevelBase):
+        pass
+
+    class SyslogLogging(DefaultNotEnabled, LoggingLevelBase):
+        address: Optional[str] = Field("")
+
+    class FileLogging(DefaultEnabled, LoggingLevelBase):
+        path: Path = Path(DEF_CLNT_LOGGING_FILE_PATH)
+        filename_prefix: str = DEF_CLNT_LOGGING_FILE_FILENAME_PREFIX
+        file_name: Optional[str] = None
+        # fixme: logic for current user
+        user: str = Field(default="www-data")
+        group: str = Field(default="www-data")
+
+        _validate_path = field_validator("path", mode="before")(str2path)
+
+    class SanitizeLogging(DefaultNotEnabled):
+        replacement_str: str = Field(default="<sanitized>")
+
+    class IntegrateZMLogging(DefaultNotEnabled):
+        debug_level: int = Field(default=4)
+
+    level: int = logging.INFO
+    console: ConsoleLogging = Field(default_factory=ConsoleLogging)
+    syslog: SyslogLogging = Field(default_factory=SyslogLogging)
+    integrate_zm: IntegrateZMLogging = Field(default_factory=IntegrateZMLogging)
+    file: FileLogging = Field(default_factory=FileLogging)
+    sanitize: SanitizeLogging = Field(default_factory=SanitizeLogging)
 
 
 class ZMDBSettings(BaseSettings):
@@ -67,7 +116,9 @@ class ZoneMinderSettings(BaseSettings, extra="allow"):
         write_notes: bool = Field(True)
 
     class ZMAPISettings(BaseSettings):
-        model_config = SettingsConfigDict(env_prefix="ML_CLIENT_ZONEMINDER_API_", extra="allow")
+        model_config = SettingsConfigDict(
+            env_prefix="ML_CLIENT_ZONEMINDER_API_", extra="allow"
+        )
         api_url: Optional[AnyUrl] = Field(None)
         user: Optional[SecretStr] = Field(None)
         password: Optional[SecretStr] = Field(None)
@@ -215,7 +266,9 @@ class MLNotificationSettings(BaseModel):
         I_AM_AWARE_OF_THE_DANGER_OF_RUNNING_SHELL_SCRIPTS: Optional[str] = "No I am not"
         # TODO: ARGS and AUTH
         pass_token: Optional[bool] = Field(False, description="Pass JWT to script")
-        pass_creds: Optional[bool] = Field(False, description="Pass username and password to script")
+        pass_creds: Optional[bool] = Field(
+            False, description="Pass username and password to script"
+        )
         args: Optional[List[str]] = None
 
     class MQTTNotificationSettings(DefaultNotEnabled):
@@ -272,17 +325,20 @@ class APIPullMethod(DefaultNotEnabled):
     snapshot_frame_skip: Optional[int] = Field(3)
     max_frames: Optional[int] = Field(0)
     timeout: Optional[int] = Field(10)
-    _lp: str = Field("", description='logging prefix', repr=False)
-
+    _lp: str = Field("", description="logging prefix", repr=False)
 
     @model_validator(mode="after")
     def _validate_model_after(self):
         self._lp = f"{self.__class__.__name__}:"
         if self.fps and self.sbf:
-            logger.warning(f"{self._lp} fps and sbf cannot both be set, sbf takes precedence")
+            logger.warning(
+                f"{self._lp} fps and sbf cannot both be set, sbf takes precedence"
+            )
             self.fps = None
         elif not self.fps and not self.sbf:
-            logger.warning(f"{self._lp} fps and sbf are both not set, defaulting to 1 fps")
+            logger.warning(
+                f"{self._lp} fps and sbf are both not set, defaulting to 1 fps"
+            )
             self.fps = 1
         return self
 
@@ -298,26 +354,32 @@ class ZMSPullMethod(DefaultNotEnabled):
         "Cannot be used with fps.",
     )
     url: Optional[AnyUrl] = Field(
-        None, description="URL to the nph-zms cgi script (ex: http://zm.example.com/zm/cgi-bin/nph-zms). If not supplied it will be auto-detected."
+        None,
+        description="URL to the nph-zms cgi script (ex: http://zm.example.com/zm/cgi-bin/nph-zms). If not supplied it will be auto-detected.",
     )
     attempts: Optional[int] = Field(3, description="Number of attempts to get a frame")
     delay: Optional[float] = Field(1.0, description="Delay between attempts")
-    max_frames: Optional[int] = Field(0, description="Maximum number of frames to process")
+    max_frames: Optional[int] = Field(
+        0, description="Maximum number of frames to process"
+    )
     timeout: Optional[int] = Field(10)
 
-    _lp: str = Field("", description='logging prefix', repr=False)
+    _lp: str = Field("", description="logging prefix", repr=False)
 
     @model_validator(mode="after")
     def _validate_model_after(self):
         self._lp = f"{self.__class__.__name__}:"
         if self.fps and self.sbf:
-            logger.warning(f"{self._lp} fps and sbf cannot both be set, sbf takes precedence")
+            logger.warning(
+                f"{self._lp} fps and sbf cannot both be set, sbf takes precedence"
+            )
             self.fps = None
         elif not self.fps and not self.sbf:
-            logger.warning(f"{self._lp} fps and sbf are both not set, defaulting to 1 fps")
+            logger.warning(
+                f"{self._lp} fps and sbf are both not set, defaulting to 1 fps"
+            )
             self.fps = 1
         return self
-
 
 
 class DetectionSettings(BaseModel):
@@ -527,13 +589,12 @@ class ConfigFileModel(BaseModel):
     monitors: Optional[Dict[int, MonitorsSettings]] = Field(default_factory=dict)
 
     _validate_config_path = field_validator("config_path", mode="before")(validate_dir)
+
     @model_validator(mode="after")
     def _validate_model_after(self):
         """check for url attr in ZMSPullMethod"""
 
-
         pass
-
 
 
 class ClientEnvVars(BaseSettings):
@@ -566,3 +627,78 @@ class ClientEnvVars(BaseSettings):
     _validate_zm_conf_dir = field_validator(
         "zm_conf_dir", "ml_conf_dir", mode="before"
     )(validate_dir)
+
+
+class Result(BaseModel):
+    label: str
+    confidence: float
+    bounding_box: List[int]
+
+    def __eq__(self, other):
+        if not isinstance(other, Result):
+            return False
+        return (
+            self.label == other.label
+            and self.confidence == other.confidence
+            and self.bounding_box == other.bounding_box
+        )
+
+    def __str__(self):
+        return f"'{self.label}' ({self.confidence:.2f}) @ {self.bounding_box}"
+
+    def __repr__(self):
+        return f"<'{self.label}' ({self.confidence * 100:.2f}%) @ {self.bounding_box}>"
+
+
+class DetectionResults(BaseModel, arbitrary_types_allowed=True):
+    success: bool = Field(...)
+    name: str = Field(...)
+    type: ModelType = Field(...)
+    processor: ModelProcessor = Field(...)
+    results: Optional[List[Result]] = Field(None)
+    removed_by_filters: Optional[List[Result]] = Field(None, repr=False)
+
+    image: Optional[np.ndarray] = Field(None, repr=False)
+    extra_image_data: Optional[Dict[str, Any]] = Field(None, repr=False)
+
+    def get_labels(self) -> List[Optional[str]]:
+        if not self.results or self.results is None:
+            return []
+        return (
+            [r.label for r in self.results],
+            [r.confidence for r in self.results],
+            [r.bounding_box for r in self.results],
+        )
+
+class GlobalConfig(BaseModel, arbitrary_types_allowed=True, extra="allow"):
+    from ..Libs.DB import ZMDB
+    from ..Libs.API import ZMAPI
+
+    api: Optional[ZMAPI] = None
+    db: Optional[ZMDB] = None
+    mid: Optional[int] = None
+    config: Optional[ConfigFileModel] = None
+    config_file: Union[str, Path, None] = None
+    configs_path: Union[str, Path, None] = None
+    eid: Optional[int] = None
+    mon_name: Optional[str] = None
+    mon_post: Optional[int] = None
+    mon_pre: Optional[int] = None
+    mon_fps: Optional[Decimal] = None
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+    event_path: Optional[Path] = None
+    event_cause: Optional[str] = None
+    past_event: bool = False
+    Event: Optional[Dict] = None
+    Frame: Optional[List] = None
+    mon_image_buffer_count: Optional[int] = None
+    mon_width: Optional[int] = None
+    mon_height: Optional[int] = None
+    mon_colorspace: Optional[int] = None
+    frame_buffer: Optional[Dict] = Field(default_factory=dict)
+
+    Environment: Optional[Union[ClientEnvVars]] = None
+    imported_zones: list = Field(default_factory=list)
+    random: Dict = Field(default_factory=dict)
+    static_objects: Dict = Field(default_factory=dict)

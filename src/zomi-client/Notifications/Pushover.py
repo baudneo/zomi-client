@@ -13,7 +13,7 @@ import urllib3.exceptions
 from pydantic import BaseModel, Field, AnyUrl
 
 from ..main import get_global_config
-from ...Shared.configs import GlobalConfig
+from ..Models.config import GlobalConfig
 from ..Log import CLIENT_LOGGER_NAME
 from ..Notifications import CoolDownBase
 

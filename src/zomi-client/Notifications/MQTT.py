@@ -14,7 +14,7 @@ from ..Notifications import CoolDownBase
 from ..main import get_global_config
 
 if TYPE_CHECKING:
-    from ...Shared.configs import GlobalConfig
+    from ..Models.config import GlobalConfig
 
 g: Optional[GlobalConfig] = None
 logger = logging.getLogger(CLIENT_LOGGER_NAME)

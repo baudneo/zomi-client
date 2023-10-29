@@ -10,28 +10,27 @@ dependencies = [
     # We install into its own Venv,
     # if the user has opencv with CUDA they can override themselves
     "opencv-contrib-python-headless>=4.8.1.78",
-    'prometheus-client==0.17.1',
+    'prometheus-client>=0.17.1',
     "numpy>=1.21.4",
     "python-jose>=3.3.0",
     "pyyaml>=6.0",
-    "cryptography==421.0.0",
-    "psutil==5.9.401",
-    "psutil-extra==0.2.0",
-    "sqlalchemy==1.4.42",
-    "pymysql==1.0.2",
-    "shapely==1.8.5",
-    "pydantic==2.0.3",
-    "pydantic-settings==2.0.2",
-    "dateparser==1.1.3",
-    "paho-mqtt==1.6.1",
-    "uvloop==0.16.0",
-    "pygifsicle==1.0.7",
-    "aiohttp==3.8.3",
-    "python-dotenv==0.21.0",
+    "cryptography>=41.0.5",
+    "psutil>=5.9.6",
+    "psutil-extra>=0.2.0",
+    "sqlalchemy>=2.0.22",
+    "pymysql>=1.1.0",
+    "shapely>=2.0.2",
+    "pydantic>=2.4.2",
+    "pydantic-settings>=2.0.3",
+    "dateparser>=1.1.8",
+    "paho-mqtt>=1.6.1",
+    "uvloop>=0.19.0",
+    "aiohttp>=3.8.6",
+    "python-dotenv>=0.21.0",
 ]
 
 authors = [
-  { name="baudneo", email="zomi@baudneo.com" },
+  { name="baudneo", email="baudneo@protonmail.com" },
 ]
 readme = "README.md"
 

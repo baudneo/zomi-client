@@ -976,14 +976,15 @@ def do_install(_inst_type: str):
         # create a symbolic link to both files in /usr/local/bin
         # so that they can be called from anywhere
         test_msg(
-            f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zmml_ESC (shell helper) zmml_eventproc (python script)",
+            f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zomi_ESC "
+            f"(shell helper) zomi_eventproc (python script)",
             "info",
         )
 
         if not testing:
             # Make sure it does not exist first, it will error if file exists
-            _dest_esc = Path("/usr/local/bin/zmml_ESC")
-            _dest_ep = Path("/usr/local/bin/zmml_eventproc")
+            _dest_esc = Path("/usr/local/bin/zomi_ESC")
+            _dest_ep = Path("/usr/local/bin/zomi_eventproc")
             # if it exists log a message that it is being unlinked then symlinked again with specified user
 
             if _dest_esc.exists():
@@ -1006,9 +1007,9 @@ def do_install(_inst_type: str):
         if "ML_INSTALL_CLIENT_ROUTE_PORT" not in _ENV:
             _ENV["ML_INSTALL_CLIENT_ROUTE_PORT"] = "5000"
         if "ML_INSTALL_CLIENT_ROUTE_USER" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_USER"] = "zomi"
+            _ENV["ML_INSTALL_CLIENT_ROUTE_USER"] = "imoz"
         if "ML_INSTALL_CLIENT_ROUTE_PASS" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_PASS"] = "imoz"
+            _ENV["ML_INSTALL_CLIENT_ROUTE_PASS"] = "zomi"
 
         _src: str = (
             f"{REPO_BASE.expanduser().resolve().as_posix()}"
@@ -1043,27 +1044,6 @@ def do_install(_inst_type: str):
 
 
 class Envsubst:
-    # MIT License
-    #
-    # Copyright (c) 2019 Alex Shafer
-    #
-    # Permission is hereby granted, free of charge, to any person obtaining a copy
-    # of this software and associated documentation files (the "Software"), to deal
-    # in the Software without restriction, including without limitation the rights
-    # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    # copies of the Software, and to permit persons to whom the Software is
-    # furnished to do so, subject to the following conditions:
-    #
-    # The above copyright notice and this permission notice shall be included in all
-    # copies or substantial portions of the Software.
-    #
-    # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    # AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    # SOFTWARE.
     strict: bool
     env: Optional[Dict]
 
@@ -1345,7 +1325,7 @@ if __name__ == "__main__":
     args.config_dir = cfg_dir = cfg_dir.expanduser().resolve()
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
-    ml_user, ml_group = args.ml_user or "zomi", args.ml_group or "imoz"
+    ml_user, ml_group = args.ml_user or "imoz", args.ml_group or "zomi"
     do_web_user()
     if not ml_user:
         logger.error(
@@ -1387,14 +1367,18 @@ if __name__ == "__main__":
         _cfg = False
         if args.config_only:
             _cfg = True
-            logger.info(f"\n***Only installing config file! ***\n")
         if args.secrets_only:
             secrets = True
-            logger.info(f"\n***Only installing secrets file! ***\n")
 
-        if secrets:
+        if secrets and _cfg:
+            logger.info(f"\n***Only installing config and secrets files! ***\n")
             create_("secrets", cfg_dir / "secrets.yml")
-        if _cfg:
+            create_("client", cfg_dir / "client.yml")
+        elif secrets:
+            logger.info(f"\n***Only installing secrets file! ***\n")
+            create_("secrets", cfg_dir / "secrets.yml")
+        elif _cfg:
+            logger.info(f"\n***Only installing config file! ***\n")
             create_("client", cfg_dir / "client.yml")
         sys.exit(0)
 

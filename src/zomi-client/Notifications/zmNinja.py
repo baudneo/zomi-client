@@ -12,7 +12,7 @@ from typing import Optional, Union, Tuple, Dict, List
 from pydantic import BaseModel, Field, field_validator, SecretStr, AnyUrl, IPvAnyAddress
 
 from ..main import get_global_config
-from ...Shared.configs import GlobalConfig
+from ..Models.config import GlobalConfig
 from ..Log import CLIENT_LOGGER_NAME
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)

@@ -16,10 +16,11 @@ except ImportError as e:
     Polygon = None
 
 from ..Log import CLIENT_LOGGER_NAME
+from .validators import str2path
 
 if TYPE_CHECKING:
     from ..Libs.API import ZMAPI
-    from ...Shared.configs import GlobalConfig
+    from ..Models.config import GlobalConfig
 
 g: Optional[GlobalConfig] = None
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
@@ -297,7 +298,6 @@ class CFGHash:
         lp = "hash::init::"
         self.hash = ""
         if config_file:
-            from ...Shared.Models.validators import str2path
             self.config_file = str2path(config_file)
 
     def compute(
@@ -321,7 +321,6 @@ class CFGHash:
         checksum = new(algorithm)  # Raises appropriate exceptions.
         self.previous_hash = str(self.hash)
         self.hash = ""
-        from ...Shared.Models.validators import str2path
 
         if input_file:
             logger.debug(f"{lp} input_file={input_file}")

@@ -18,8 +18,7 @@ import numpy as np
 from ...Log import CLIENT_LOGGER_NAME
 
 if TYPE_CHECKING:
-    from ....Shared.configs import GlobalConfig
-    from ....Client.Models.config import APIPullMethod, ZMSPullMethod
+    from ...Models.config import GlobalConfig, APIPullMethod, ZMSPullMethod
 
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
@@ -200,6 +199,8 @@ class PipeLine:
             logger.debug(
                 f"{LP}image_generator: AFTER YIELD {self.frames_attempted = } ---- {self.total_max_frames = } ::: {self.frames_attempted < self.total_max_frames = }"
             )
+    async def get_image(self) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
+        raise NotImplementedError
 
 
 class APIImagePipeLine(PipeLine):
@@ -374,7 +375,6 @@ class ZMSImagePipeLine(PipeLine):
     frame=<fid> will ask for a specific frame from an event (implies event mode)
     """
 
-    from ....Client.Models.config import ZMSPullMethod
 
     def __init__(
         self,

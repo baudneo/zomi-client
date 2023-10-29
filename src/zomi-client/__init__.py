@@ -1,4 +1,3 @@
-__all__ = ['Client', 'Shared']
 __version__ = "0.0.1a5"
 __author__ = "baudneo"
 __org__ = "ZoneMinder"

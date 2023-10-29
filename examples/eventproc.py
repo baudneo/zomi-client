@@ -16,17 +16,16 @@ except ImportError:
     print("ZoMi Client library not installed! Please install zomi-client!")
     sys.exit(1)
 
-from zomi_client.Shared.Models.validators import str2path
-from zomi_client.Shared.configs import GlobalConfig
-from zomi_client.Client.Models.config import ClientEnvVars
-from zomi_client.Client.main import (
+from zomi_client.Models.validators import str2path
+from zomi_client.Models.config import ClientEnvVars, GlobalConfig
+from zomi_client.main import (
     parse_client_config_file,
     create_global_config,
     create_logs,
 )
 
 if TYPE_CHECKING:
-    from zomi_client.Client.main import ZMClient
+    from zomi_client.main import ZMClient
 
 __doc__ = """
 An example that uses ZM's EventStartCommand/EventEndCommand mechanism to run 
@@ -148,7 +147,7 @@ async def main():
         f"Config File: {cfg_file}"
     )
     g.config = parse_client_config_file(cfg_file)
-    zm_client = zomi_client.Client.main.ZMClient(global_config=g)
+    zm_client = zomi_client.main.ZMClient(global_config=g)
     _end_init = time.perf_counter()
     __event_modes = ["event", ""]
     if _mode in __event_modes:

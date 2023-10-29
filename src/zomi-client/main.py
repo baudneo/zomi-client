@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import base64
 import concurrent.futures
 import copy
 import json
@@ -74,8 +75,8 @@ from .Models.config import (
     NotificationZMURLOptions,
     ClientEnvVars,
 )
-from ..Shared.Models.config import Testing, DetectionResults, Result
-from ..Shared.configs import GlobalConfig
+from .Models.config import Testing, DetectionResults, Result
+from .Models.config import GlobalConfig
 from .Log import CLIENT_LOGGER_NAME, CLIENT_LOG_FORMAT
 
 if TYPE_CHECKING:
@@ -1007,81 +1008,62 @@ class ZMClient:
                     f"{lp} Login failed to ZoMi ML API, please check the credentials configured in your client config file. mlapi->username, mlapi->password."
                 )
 
-            if any([g.config.animation.gif, g.config.animation.mp4]):
-                if g.config.animation.low_memory:
-                    # save image buffer to disk
-                    _tmp = g.config.system.tmp_path / "animations"
-                    _tmp.mkdir(parents=True, exist_ok=True)
-                    cv2.imwrite(
-                        str(_tmp / f"{image_name}.jpg"),
-                        await self.convert_to_cv2(image),
-                    )
-                    # Add Path pbject pointing to the image on disk
-                    g.frame_buffer[image_name] = _tmp / f"{image_name}.jpg"
-                else:
-                    # Keep images in RAM
-                    g.frame_buffer[image_name] = image
-                logger.debug(
-                    f"{lp}animations:: Added image to frame buffer: {image_name} -- {type(image)=}"
-                )
             from ..Shared.Models.config import DetectionResults
 
             results: Optional[List[DetectionResults]] = None
             reply: Optional[Dict[str, Any]] = None
 
             url = f"{str(route.host)}detect"
-            with aiohttp.MultipartWriter("form-data") as mpwriter:
-                for model_name in models.keys():
-                    part = mpwriter.append_json(
-                        model_name,
-                        {"Content-Type": "application/json"},
-                    )
-                    part.set_content_disposition("form-data", name="hints_model")
+            # base64 encode the image
 
-                part = mpwriter.append(
-                    image,
-                    {"Content-Type": "image/jpeg"},
-                )
-                part.set_content_disposition(
-                    "form-data", name="images", filename=image_name
-                )
-                logger.debug(
-                    f"Sending image to 'ZoMi Machine Learning API' ['{route.name}' @ "
-                    f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}]"
-                )
-                _perf = perf_counter()
-                r: aiohttp.ClientResponse
-                session: aiohttp.ClientSession = g.api.async_session
-                try:
-                    async with session.post(
-                        url,
-                        data=mpwriter,
-                        timeout=aiohttp.ClientTimeout(total=30.0),
-                        headers={
-                            "Authorization": f"Bearer {ml_token}",
-                        },
-                    ) as r:
-                        r.raise_for_status()
-                        status = r.status
-                        if r.content_type == "application/json":
-                            reply = await r.json()
-                        else:
-                            logger.error(
-                                f"{lp} Route '{route.name}' returned a non-json response! \n{r}"
-                            )
-                # deal with unauthorized
-                except aiohttp.ClientResponseError as e:
-                    logger.warning(f"{lp} API returned: {e}")
-                    if e.status == 401:
+
+
+
+            json_body = json.dumps({
+                "image": base64.b64encode(image),
+                "model_hints": [x for x in models.keys() if x],
+            })
+
+            logger.debug(
+                f"Sending image to 'ZoMi Machine Learning API' ['{route.name}' @ "
+                f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}]"
+            )
+            _perf = perf_counter()
+            r: aiohttp.ClientResponse
+            mlapi_timeout = g.config.mlapi.timeout
+            if mlapi_timeout is None:
+                mlapi_timeout = 90.0
+            session: aiohttp.ClientSession = g.api.async_session
+            try:
+                async with session.post(
+                    url,
+                    data=json_body,
+                    timeout=aiohttp.ClientTimeout(total=mlapi_timeout),
+                    headers={
+                        "Authorization": f"Bearer {ml_token}",
+                    },
+                ) as r:
+                    r.raise_for_status()
+                    status = r.status
+                    if r.content_type == "application/json":
+                        reply = await r.json()
+                    else:
                         logger.error(
-                            f"{lp} API returned 401 unauthorized, trying to re-authorize with credentials"
+                            f"{lp} Route '{route.name}' returned a non-json response! \n{r}"
                         )
-                        ml_token = ""
-                    continue
+            # deal with unauthorized
+            except aiohttp.ClientResponseError as e:
+                logger.warning(f"{lp} API returned: {e}")
+                if e.status == 401:
+                    logger.error(
+                        f"{lp} API returned 401 unauthorized, trying to re-authorize with credentials"
+                    )
+                    ml_token = ""
+                continue
 
-                except Exception as e:
-                    logger.error(f"{lp} Error sending image to API: {e}")
-                    continue
+            except Exception as e:
+                logger.error(f"{lp} Error sending image to API: {e}")
+                continue
 
             logger.debug(
                 f"perf:{lp} Detection request to '{route.name}' completed in "
