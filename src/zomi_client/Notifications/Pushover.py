@@ -1,10 +1,8 @@
 import datetime
 import logging
 import pickle
-import time
-from enum import Enum, IntEnum
-from pathlib import Path
-from pickle import loads as pickle_loads, dump as pickle_dump
+from enum import IntEnum
+from pickle import loads as pickle_loads
 from typing import List, NoReturn, Union, Optional, Tuple, Dict
 
 import numpy as np
@@ -12,10 +10,10 @@ import requests
 import urllib3.exceptions
 from pydantic import BaseModel, Field, AnyUrl
 
-from ..main import get_global_config
-from ..Models.config import GlobalConfig
 from ..Log import CLIENT_LOGGER_NAME
+from ..Models.config import GlobalConfig
 from ..Notifications import CoolDownBase
+from ..main import get_global_config
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 g: Optional[GlobalConfig] = None
@@ -187,7 +185,6 @@ class Pushover(CoolDownBase):
 
     def pickle(self, action: str = 'r', data: Optional[float] = None):
         """Pickle read/write the timestamp of each monitor's last successful pushover notification"""
-        import os
         lp: str = "pushover::pickle::"
         action = action.casefold().strip()
         var_path = g.config.system.variable_data_path

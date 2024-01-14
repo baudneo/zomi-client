@@ -7,15 +7,20 @@ import json
 import logging
 import logging.handlers
 import os
+import sys
 import pickle
 import re
 import signal
 from datetime import datetime, timedelta
 from pathlib import Path
 from shutil import which
-from time import perf_counter, time
+import time
 import warnings
 from typing import Union, Dict, Optional, List, Any, Tuple, TYPE_CHECKING
+
+import aiohttp
+
+from .Models.validators import str2bool
 
 try:
     import cv2
@@ -55,7 +60,7 @@ except ImportError as e:
 
 from .Libs.Media.pipeline import (
     APIImagePipeLine,
-    SHMImagePipeLine,
+    # SHMImagePipeLine,
     ZMUImagePipeLine,
     ZMSImagePipeLine,
 )
@@ -74,10 +79,14 @@ from .Models.config import (
     MatchStrategy,
     NotificationZMURLOptions,
     ClientEnvVars,
+    GlobalConfig,
+    LoggingSettings,
+    Testing,
+    DetectionResults,
+    Result,
 )
-from .Models.config import Testing, DetectionResults, Result
-from .Models.config import GlobalConfig
-from .Log import CLIENT_LOGGER_NAME, CLIENT_LOG_FORMAT
+
+from .Log import CLIENT_LOGGER_NAME, CLIENT_LOG_FORMAT, BufferedLogHandler
 
 if TYPE_CHECKING:
     from .Libs.DB import ZMDB
@@ -110,8 +119,6 @@ def set_logger(l: logging.Logger) -> None:
 
 def create_logs() -> logging.Logger:
     global logger
-    import sys
-    from ..Shared.Log.handlers import BufferedLogHandler
 
     del logger
     logger = logging.getLogger(CLIENT_LOGGER_NAME)
@@ -129,13 +136,11 @@ async def init_logs(config: ConfigFileModel) -> None:
     """Initialize the logging system."""
     import getpass
     import grp
-    from ..Shared.Log.handlers import BufferedLogHandler
 
     sys_user: str = getpass.getuser()
     sys_gid: int = os.getgid()
     sys_group: str = grp.getgrgid(sys_gid).gr_name
     sys_uid: int = os.getuid()
-    from ..Shared.Models.config import LoggingSettings
 
     cfg: LoggingSettings = config.logging
     root_level = cfg.level
@@ -169,11 +174,7 @@ async def init_logs(config: ConfigFileModel) -> None:
             )
         else:
             # ZM /var/log/zm is handled by logrotate
-            # todo: add timed rotating log file handler if configured
             file_handler = logging.FileHandler(abs_logfile.as_posix(), mode="a")
-            # file_handler = logging.handlers.TimedRotatingFileHandler(
-            #     file_from_config, when="midnight", interval=1, backupCount=7
-            # )
             file_handler.setFormatter(CLIENT_LOG_FORMAT)
             if g.config.logging.file.level:
                 logger.debug(
@@ -187,7 +188,7 @@ async def init_logs(config: ConfigFileModel) -> None:
             for h in logger.handlers:
                 if isinstance(h, BufferedLogHandler):
                     logger.debug(
-                        f"Flushing buffered log handler to file {h=} ---- {file_handler=}"
+                        f"Flushing buffered log handler to file --- {file_handler=}"
                     )
                     h.flush(file_handler=file_handler)
                     # Close the buffered handler
@@ -221,7 +222,7 @@ def parse_client_config_file(
     if template is None:
         template = ConfigFileModel
     cfg: Dict = {}
-    _start = perf_counter()
+    _start = time.time()
     raw_config = cfg_file.read_text()
 
     try:
@@ -274,7 +275,7 @@ def parse_client_config_file(
     logger.debug(f"Replacing ${{VARS}} in config")
     cfg = _replace_vars(raw_config, substitutions)
     logger.debug(
-        f"perf:: Config file loaded and validated in {perf_counter() - _start:.5f} seconds"
+        f"perf:: Config file loaded and validated in {time.time() - _start:.5f} seconds"
     )
 
     return template(**cfg)
@@ -371,27 +372,6 @@ class StaticObjects(BaseModel):
         :param labels: list of labels (Required for write)
         """
         lp: str = f"static_objects:{'write' if write else 'read'}:"
-        _so_cause = "default"
-        _so = False
-        if g.config.matching.static_objects.enabled is not None:
-            _so = g.config.matching.static_objects.enabled
-            _so_caused = "global"
-        if g.mid in g.config.monitors:
-            if (
-                g.config.monitors[g.mid].static_objects
-                and g.config.monitors[g.mid].static_objects.enabled
-            ):
-                _so = g.config.monitors[g.mid].static_objects.enabled
-                _so_cause = f"monitor: {g.mid}"
-        if _so is False or _so is None:
-            logger.debug(
-                f"{lp} static object matching is disabled by {_so_cause} config"
-            )
-            return None
-        elif _so is True:
-            logger.debug(
-                f"{lp} static object matching is enabled by {_so_cause} config"
-            )
 
         variable_data_path = g.config.system.variable_data_path
         filename = self.filename
@@ -420,7 +400,9 @@ class StaticObjects(BaseModel):
                 except Exception as e:
                     logger.error(f"{lp} error: {e}")
                 else:
-                    logger.debug(f"{lp} returning results: {labels}, {confs}, {bboxs}")
+                    logger.debug(
+                        f"{lp} read file success! returning results: {labels}, {confs}, {bboxs}"
+                    )
             else:
                 logger.warning(f"{lp} no history data file found for monitor '{g.mid}'")
         else:
@@ -522,9 +504,7 @@ class ZMClient:
     routes: List[ServerRoute]
     mid: int
     eid: int
-    image_pipeline: Union[
-        APIImagePipeLine, SHMImagePipeLine, ZMUImagePipeLine, ZMSImagePipeLine
-    ]
+    image_pipeline: Union[APIImagePipeLine, ZMSImagePipeLine]
     _comb: Dict
 
     @staticmethod
@@ -647,7 +627,7 @@ class ZMClient:
         # convert the numpy image to OpenCV format
         lp = "convert_to_cv2::"
         if isinstance(image, bytes):
-            logger.debug(f"{lp} image is bytes, converting to cv2 numpy array")
+            # logger.debug(f"{lp} image is in bytes, converting to cv2 numpy array")
             # image = cv2.imdecode(np.frombuffer(image, dtype=np.uint8), cv2.IMREAD_COLOR)
             image = cv2.imdecode(
                 np.asarray(bytearray(image), dtype=np.uint8), cv2.IMREAD_COLOR
@@ -665,7 +645,7 @@ class ZMClient:
         # logger.debug(f"{lp} OVERRIDE filters [type: {type(filters_2)}]: {filters_2}")
         if isinstance(filters_1, (MatchFilters, OverRideMatchFilters)):
             # logger.debug(f"{lp} filters_1 is a MatchFilters object, converting to dict")
-            output_filters: Dict = filters_1.dict()
+            output_filters: Dict = filters_1.model_dump()
         elif isinstance(filters_1, dict):
             output_filters = filters_1
         else:
@@ -677,7 +657,7 @@ class ZMClient:
             # logger.debug(
             #     f"{lp} filters_2 is a {type(filters_2)} object, converting to dict"
             # )
-            override_filters: Dict = filters_2.dict()
+            override_filters: Dict = filters_2.model_dump()
         elif isinstance(filters_2, dict):
             override_filters = filters_2
         elif filters_2 is None:
@@ -750,7 +730,7 @@ class ZMClient:
         matched_processor = ""
         matched_frame_img = np.ndarray([])
         image_name: Optional[Union[int, str]] = None
-        _start = perf_counter()
+        _start = time.time()
         global g
         strategy: MatchStrategy = g.config.matching.strategy
         if eid:
@@ -769,8 +749,8 @@ class ZMClient:
                         cause.find("Motion") == -1
                         and cause.find("Trigger") == -1
                         and cause.find("ONVIF") == -1
+                        # and cause.find("Forced") == -1
                     ):
-
                         _cont = False
                     else:
                         _cont = True
@@ -783,7 +763,6 @@ class ZMClient:
                     )
                     return None
 
-
             await self.db.get_all_event_data(eid)
         elif not eid and mid:
             logger.info(
@@ -791,18 +770,12 @@ class ZMClient:
                 f"ZMU: {g.config.detection_settings.images.pull_method}"
             )
             g.mid = mid
-        _start_1 = perf_counter()
+
         await init_logs(g.config)
-        logger.debug(
-            f"perf:MAIN:: log init took {perf_counter() - _start_1:.5f} seconds to complete"
-        )
-        _start_1 = perf_counter()
-        await self.api.import_zones()
-        logger.debug(
-            f"perf:MAIN:: zone import took {perf_counter() - _start_1:.5f} seconds to complete"
-        )
+        await self.db.import_zones()
+        # Sets absolute file path for pickled data file.
         self.static_objects.filename = (
-            g.config.system.variable_data_path / f"static-objects_m{g.mid}.pkl"
+            g.config.system.variable_data_path / f"misc/.static-objects_m{g.mid}.pkl"
         )
 
         # init Image Pipeline
@@ -810,20 +783,24 @@ class ZMClient:
         img_pull_method = self.config.detection_settings.images.pull_method
         if img_pull_method.shm is True:
             raise NotImplementedError(f"SHM image pulling is not supported yet")
-            # self.image_pipeline = SHMImagePipeLine()
         elif img_pull_method.api and img_pull_method.api.enabled is True:
             logger.debug(f"{lp} Using ZM API for image source")
             self.image_pipeline = APIImagePipeLine(img_pull_method.api)
         elif img_pull_method.zmu is True:
             raise NotImplementedError(f"ZMU image pulling is not supported yet")
-            pass
-            # self.image_pipeline = ZMUImagePipeLine()
-        elif img_pull_method.zms and img_pull_method.zms.enabled is True:
+
+        if img_pull_method.zms and img_pull_method.zms.enabled is True:
             logger.debug(f"{lp} Using ZMS CGI for image source")
             self.image_pipeline = ZMSImagePipeLine(img_pull_method.zms)
 
         models: Optional[Dict] = None
         self.static_objects.pickle()
+        create_default_zone: bool = True
+        if "create_default_full_image_zone" in self.config.monitors:
+            temp_var = self.config.monitors.pop("create_default_full_image_zone", None)
+            if temp_var is not None:
+                create_default_zone = str2bool(temp_var)
+
         if g.mid in self.config.monitors:
             if self.config.monitors[g.mid].zones:
                 self.zones = self.config.monitors[g.mid].zones
@@ -847,7 +824,7 @@ class ZMClient:
                     f"models from detection_settings is empty using 'yolov4'"
                 )
                 models = {"yolov4": {}}
-        _start_detections = perf_counter()
+        _start_detections = time.time()
         base_filters = g.config.matching.filters
         if g.mid in g.config.monitors:
             monitor_filters = g.config.monitors.get(g.mid).filters
@@ -856,9 +833,9 @@ class ZMClient:
         else:
             combined_filters = base_filters
 
-        if not self.zones:
+        if not self.zones and create_default_zone is True:
             logger.debug(f"{lp} No zones found, adding full image with base filters")
-            self.zones["!ZM-ML!_full_image"] = MonitorZones.model_construct(
+            self.zones["!zomi-client!_full_image"] = MonitorZones.model_construct(
                 points=[
                     (0, 0),
                     (g.mon_height, 0),
@@ -870,38 +847,42 @@ class ZMClient:
                 static_objects=OverRideStaticObjects(),
                 filters=OverRideMatchFilters(),
             )
-        # build each zones filters as they won't change, check points and resolution for scaling
-        zones = self.zones.copy()
-        mon_res = (g.mon_width, g.mon_height)
-        for zone_name, zone_data in zones.items():
-            cp_fltrs = copy.deepcopy(combined_filters)
-            self.zone_filters[zone_name] = self.combine_filters(
-                cp_fltrs, self.zones[zone_name].filters
-            )
-            if zone_data.enabled is False:
-                continue
-            if not zone_data.points:
-                continue
-            zone_points = zone_data.points
-            zone_resolution = zone_data.resolution
-            if zone_resolution != mon_res:
-                logger.warning(
-                    f"{_lp} Zone '{zone_name}' has a resolution of '{zone_resolution}'"
-                    f" which is different from the monitor resolution of {mon_res}! "
-                    f"Attempting to scale zone to match monitor resolution..."
+
+        if self.zones is not None:
+            # build each zones filters as they won't change, check points and resolution for scaling
+            zones = self.zones.copy()
+            mon_res = (g.mon_width, g.mon_height)
+            for zone_name, zone_data in zones.items():
+                cp_fltrs = copy.deepcopy(combined_filters)
+                self.zone_filters[zone_name] = self.combine_filters(
+                    cp_fltrs, self.zones[zone_name].filters
                 )
-                logger.debug(f"{mon_res = } -- {zone_resolution = }")
-                xfact: float = mon_res[1] / zone_resolution[1] or 1.0
-                yfact: float = mon_res[0] / zone_resolution[0] or 1.0
-                logger.debug(
-                    f"{_lp} rescaling polygons: using x_factor: {xfact} and y_factor: {yfact}"
-                )
-                zone_points = [(int(x * xfact), int(y * yfact)) for x, y in zone_points]
-                logger.debug(
-                    f"{_lp} Zone '{zone_name}' points adjusted to: {zone_points}"
-                )
-                self.zones[zone_name].points = zone_points
-        del zones
+                if zone_data.enabled is False:
+                    continue
+                if not zone_data.points:
+                    continue
+                zone_points = zone_data.points
+                zone_resolution = zone_data.resolution
+                if zone_resolution != mon_res:
+                    logger.warning(
+                        f"{_lp} Zone '{zone_name}' has a resolution of '{zone_resolution}'"
+                        f" which is different from the monitor resolution of {mon_res}! "
+                        f"Attempting to scale zone to match monitor resolution..."
+                    )
+                    logger.debug(f"{mon_res = } -- {zone_resolution = }")
+                    xfact: float = mon_res[1] / zone_resolution[1] or 1.0
+                    yfact: float = mon_res[0] / zone_resolution[0] or 1.0
+                    logger.debug(
+                        f"{_lp} rescaling polygons: using x_factor: {xfact} and y_factor: {yfact}"
+                    )
+                    zone_points = [
+                        (int(x * xfact), int(y * yfact)) for x, y in zone_points
+                    ]
+                    logger.debug(
+                        f"{_lp} Zone '{zone_name}' points adjusted to: {zone_points}"
+                    )
+                    self.zones[zone_name].points = zone_points
+            del zones
         image: Union[bytes, np.ndarray, None]
         route = g.config.mlapi
         matched_l, matched_c, matched_b = [], [], []
@@ -909,12 +890,12 @@ class ZMClient:
         ml_pass = g.config.mlapi.password
         ml_token = ""
         ml_token_data = {}
-        token_cache = g.config.system.variable_data_path / ".ml_token.pkl"
-        if token_cache.exists():
+        mlapi_token_cache = g.config.system.variable_data_path / "misc/.ml_token.pkl"
+        if mlapi_token_cache.exists():
             from jose import jwt
 
             try:
-                ml_token_data = pickle.load(token_cache.open("rb"))
+                ml_token_data = pickle.load(mlapi_token_cache.open("rb"))
                 ml_token = ml_token_data.get("access_token")
 
             except Exception as e:
@@ -936,19 +917,59 @@ class ZMClient:
                             ml_token = ""
                         else:
                             logger.debug(f"{lp} Cached token should still be valid!")
+        else:
+            mlapi_token_cache.touch(exist_ok=True, mode=0o640)
 
-        import aiohttp
+        if not ml_token:
+            logger.debug(f"{lp} No cached token found, logging in to MLAPI...")
+
+            # login to the API, the endpoint is /login and
+            # it is a body request with username and password
+            url = f"{str(route.host).rstrip('/')}:{route.port}/login"
+            logger.debug(f"{lp} Logging in to ZoMi ML API @ {url}")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url=url,
+                    data={
+                        "username": ml_user,
+                        "password": ml_pass.get_secret_value(),
+                    },
+                ) as r:
+                    status = r.status
+                    if status == 200:
+                        resp = await r.json()
+                        if ml_token := resp.get("access_token"):
+                            ml_token_data = resp
+                            logger.info(f"{lp} Login successful to ZoMi ML API")
+                            try:
+                                pickle.dump(ml_token_data, mlapi_token_cache.open("wb"))
+                            except Exception as e:
+                                logger.error(f"{lp} Error saving token to cache: {e}")
+                            else:
+                                logger.debug(
+                                    f"{lp} Token saved to cache: {mlapi_token_cache}"
+                                )
+
+                    else:
+                        logger.error(
+                            f"{lp}route '{route.name}' returned ERROR status {status} \n{r}"
+                        )
+
+        if not ml_token:
+            raise RuntimeError(
+                f"{lp} Login failed to ZoMi ML API, please check the credentials configured in your client config file. mlapi->username, mlapi->password."
+            )
 
         image_loop = 0
         # todo: add relogin logic if the token is rejected.
         # Use an async generator to get images from the image pipeline
         break_out: bool = False
-        image_start: perf_counter = perf_counter()
+        image_start = time.time()
         async for image, image_name in self.image_pipeline.image_generator():
             image_loop += 1
             if break_out is True:
                 logger.debug(
-                    f"perf:{LP} IMAGE LOOP #{image_loop} ({image_name}) took {perf_counter() - image_start:.5f} s"
+                    f"perf:{LP} IMAGE LOOP #{image_loop} ({image_name}) took {time.time() - image_start:.5f} s"
                 )
                 break
 
@@ -968,67 +989,21 @@ class ZMClient:
                 logger.warning(f"{lp} Image stream has been exhausted!")
                 break
 
-            if not ml_token:
-                logger.debug(f"{lp} No cached token found, logging in to API...")
-
-                # login to the API, the endpoint is /login and
-                # it is a body request with username and password
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{str(route.host)}login",
-                        data={
-                            "username": ml_user,
-                            "password": ml_pass.get_secret_value(),
-                        },
-                    ) as r:
-                        status = r.status
-                        if status == 200:
-                            resp = await r.json()
-                            if ml_token := resp.get("access_token"):
-                                ml_token_data = resp
-                                logger.info(f"{lp} Login successful to ZoMi ML API")
-                                try:
-                                    pickle.dump(ml_token_data, token_cache.open("wb"))
-                                except Exception as e:
-                                    logger.error(
-                                        f"{lp} Error saving token to cache: {e}"
-                                    )
-                                else:
-                                    logger.debug(
-                                        f"{lp} Token saved to cache: {token_cache}"
-                                    )
-
-                        else:
-                            logger.error(
-                                f"{lp}route '{route.name}' returned ERROR status {status} \n{r}"
-                            )
-
-            if not ml_token:
-                raise RuntimeError(
-                    f"{lp} Login failed to ZoMi ML API, please check the credentials configured in your client config file. mlapi->username, mlapi->password."
-                )
-
-            from ..Shared.Models.config import DetectionResults
-
             results: Optional[List[DetectionResults]] = None
             reply: Optional[Dict[str, Any]] = None
 
-            url = f"{str(route.host)}detect"
+            url = f"{str(route.host).rstrip('/')}:{route.port}/detect"
             # base64 encode the image
-
-
-
-
-            json_body = json.dumps({
-                "image": base64.b64encode(image),
-                "model_hints": [x for x in models.keys() if x],
-            })
-
+            images = json.dumps([base64.b64encode(image).decode("utf-8")])
+            hints = json.dumps([model for model in models.keys() if model])
+            mp = aiohttp.FormData()
+            mp.add_field("images", images, content_type="multipart/form-data")
+            mp.add_field("model_hints", hints, content_type="multipart/form-data")
             logger.debug(
-                f"Sending image to 'ZoMi Machine Learning API' ['{route.name}' @ "
+                f"Sending image #{image_loop} to 'Machine Learning API' ['{route.name}' @ "
                 f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}]"
             )
-            _perf = perf_counter()
+            _perf = time.time()
             r: aiohttp.ClientResponse
             mlapi_timeout = g.config.mlapi.timeout
             if mlapi_timeout is None:
@@ -1037,7 +1012,7 @@ class ZMClient:
             try:
                 async with session.post(
                     url,
-                    data=json_body,
+                    data=mp,
                     timeout=aiohttp.ClientTimeout(total=mlapi_timeout),
                     headers={
                         "Authorization": f"Bearer {ml_token}",
@@ -1066,16 +1041,14 @@ class ZMClient:
                 continue
 
             logger.debug(
-                f"perf:{lp} Detection request to '{route.name}' completed in "
-                f"{perf_counter() - _perf:.5f} seconds"
+                f"perf:{lp} Detection request #{image_loop} to '{route.name}' completed in "
+                f"{time.time() - _perf:.5f} seconds"
             )
 
-            if any([img_pull_method.api.enabled, img_pull_method.zms.enabled]):
-                assert isinstance(
-                    image, bytes
-                ), "Image is not bytes after getting from pipeline"
-                image: bytes
-                image_name = int(str(image_name).split("fid_")[1].split(".")[0])
+            assert isinstance(
+                image, bytes
+            ), "Image is not bytes after getting from pipeline"
+            image: bytes
 
             if image_name not in final_detections:
                 final_detections[str(image_name)] = []
@@ -1083,7 +1056,7 @@ class ZMClient:
                 self.filtered_labels[str(image_name)] = []
             if reply:
                 results = []
-                logger.debug(f"DBG>>> {reply = }")
+                # logger.debug(f"DBG>>> {reply = }")
 
                 for img_result in reply:
                     for result_ in img_result:
@@ -1093,7 +1066,7 @@ class ZMClient:
                     image, np.ndarray
                 ), "Image is not np.ndarray after converting from bytes"
                 image: np.ndarray
-                filter_start = perf_counter()
+                filter_start = time.time()
                 res_loop = 0
 
                 result: DetectionResults
@@ -1113,8 +1086,9 @@ class ZMClient:
                     )
 
                     if result.success is True:
+                        l = len(result.results)
                         logger.debug(
-                            f"There are {len(result.results)} UNFILTERED Results from model: {result.name} for image '{image_name}'"
+                            f"There {'are' if l > 1 else 'is'} {l} UNFILTERED {'results' if l > 1 else 'result'} from model: {result.name} for image '{image_name}'"
                         )
 
                         filtered_result = await self.filter_detections(
@@ -1187,21 +1161,27 @@ class ZMClient:
 
                         logger.debug(
                             f"perf:{LP} Filtering for model: '{result.name}' image name: {image_name} took "
-                            f"{perf_counter() - filter_start:.5f} seconds"
+                            f"{time.time() - filter_start:.5f} seconds"
                         )
 
                     else:
                         logger.warning(f"{LP} Result was not successful, not filtering")
 
-            logger.debug(
-                f"perf:{LP} IMAGE #{image_loop} ({image_name}) TOTAL: took {perf_counter() - image_start:.5f} seconds"
-            )
-            image_start = perf_counter()
-
+            img_time = time.time() - image_start
+            img_msg = f"perf:{LP} IMAGE #{image_loop} took {img_time:.5f} seconds"
+            if not g.past_event and img_time < 1.0:
+                remaining = 1.0 - img_time
+                img_msg = f"{img_msg} (live target: 1 FPS), sleeping for {remaining:.5f}"
+                logger.debug(f"{img_msg}")
+                await asyncio.sleep(remaining)
+                logger.debug(f"DBG>>> END OF SLEEP")
+            else:
+                logger.debug(f"{img_msg}")
+            image_start = time.time()
 
         logger.debug(
             f"perf:{LP} Camera: '{g.mon_name}' (ID: {g.mid}) :: TOTAL detections took "
-            f"{perf_counter() - _start:.5f} seconds"
+            f"{time.time() - _start:.5f} seconds"
         )
         # logger.debug(f"\n\n\nFINAL RESULTS: {final_detections}\n\n\n")
         if matched_l:
@@ -1273,7 +1253,6 @@ class ZMClient:
         **kwargs,
     ) -> List[Result]:
         """Filter detections using 2 loops, first loop is filter by object label, second loop is to filter by zone."""
-        from ..Shared.Models.config import Result
 
         zones = self.zones.copy()
         zone_filters = self.zone_filters
@@ -1316,20 +1295,32 @@ class ZMClient:
                 _result.bounding_box,
             )
             i += 1
-            _lp = f"filter:{image_name}:{model_name}:'{label}' {i}/{_lbl_tot}:"
+            _lp = f"fltr:{model_name}:'{label}' {i}/{_lbl_tot}:"
 
             #
             # Inner Loop
-            #
             idx = 0
             found_match = False
+            skip_imported_zones: bool = False
+            mon_cfg = g.config.monitors.get(g.mid)
+            if mon_cfg:
+                if mon_cfg.skip_imported_zones is not None:
+                    skip_imported_zones = mon_cfg.skip_imported_zones
 
             for zone_name, zone_data in zones.items():
                 idx += 1
                 __lp = f"{_lp}zone {idx}/{_zn_tot}::"
-                if zone_data.enabled is False:
-                    logger.debug(f"{__lp} Zone '{zone_name}' is disabled...")
+                if skip_imported_zones is True and zone_data.imported is True:
+                    logger.debug(
+                        f"{__lp} Zone '{zone_name}' is imported and 'skip_imported_zones' is configured, skipping..."
+                    )
                     continue
+                if zone_data.enabled is False:
+                    logger.debug(
+                        f"{__lp} Zone '{zone_name}' is disabled by config file..."
+                    )
+                    continue
+
                 if not zone_data.points:
                     logger.warning(
                         f"{__lp} Zone '{zone_name}' has no points! Did you rename a Zone in ZM"
@@ -1420,7 +1411,7 @@ class ZMClient:
                             logger.debug(
                                 f"{lp} matched ReGex pattern [{pattern.pattern}] ALLOWING..."
                             )
-                            if type_ == 'face':
+                            if type_ == "face":
                                 # logger.debug(
                                 #     f"DBG>> This model is typed as {type_} is not OBJECT, skipping non face filters like min_conf, total_max_area, etc."
                                 # )
@@ -1433,7 +1424,7 @@ class ZMClient:
                                     f"{lp} {confidence} IS GREATER THAN OR EQUAL TO "
                                     f"min_conf={type_filter.min_conf}, ALLOWING..."
                                 )
-                                if type_ == 'alpr':
+                                if type_ == "alpr":
                                     # logger.debug(
                                     #     f"DBG>> This model is typed as {type_} is not OBJECT, skipping non alpr filters like total_max_area, etc."
                                     # )
@@ -1624,43 +1615,47 @@ class ZMClient:
                                         continue
                                 else:
                                     logger.debug(f"{lp} no min_area set")
+                                s_o: Optional[bool] = None
+                                s_o_reason: Optional[str] = "<DFLT>"
                                 s_o = g.config.matching.static_objects.enabled
+                                if s_o is None:
+                                    s_o = False
+                                elif s_o in [True, False]:
+                                    s_o_reason = "global"
                                 mon_filt = g.config.monitors.get(g.mid)
                                 zone_filt: Optional[MonitorZones] = None
                                 if mon_filt and zone_name in mon_filt.zones:
                                     zone_filt = mon_filt.zones[zone_name]
 
                                 # Override with monitor filters than zone filters
-                                if not s_o:
-                                    if (
-                                        mon_filt
-                                        and mon_filt.static_objects
-                                        and mon_filt.static_objects.enabled
-                                    ):
-                                        s_o = True
-                                elif s_o:
-                                    if (
-                                        mon_filt
-                                        and mon_filt.static_objects
-                                        and mon_filt.static_objects.enabled
-                                    ):
-                                        s_o = False
+                                if s_o is True:
+                                    if mon_filt and mon_filt.static_objects:
+                                        if mon_filt.static_objects.enabled is False:
+                                            s_o = False
+                                            s_o_reason = "monitor"
+                                elif s_o is False:
+                                    if mon_filt and mon_filt.static_objects:
+                                        if mon_filt.static_objects.enabled is True:
+                                            s_o = True
+                                            s_o_reason = "monitor"
                                 # zone filters override monitor filters
-                                if not s_o:
+                                if s_o is False:
                                     if (
                                         zone_filt
                                         and zone_filt.static_objects.enabled is True
                                     ):
                                         s_o = True
-                                elif s_o:
+                                        s_o_reason = "zone"
+                                elif s_o is True:
                                     if (
                                         zone_filt
                                         and zone_filt.static_objects.enabled is False
                                     ):
                                         s_o = False
-                                if s_o:
+                                        s_o_reason = "zone"
+                                if s_o is True:
                                     logger.debug(
-                                        f"{__lp} 'static_objects' enabled, checking for matches"
+                                        f"{__lp} 'static_objects' enabled (lvl: {s_o_reason}), checking for matches"
                                     )
                                     if self.check_for_static_objects(
                                         label, confidence, bbox_polygon, zone_name
@@ -1678,7 +1673,7 @@ class ZMClient:
                                         continue
                                 else:
                                     logger.debug(
-                                        f"{__lp} 'static_objects' disabled, skipping check..."
+                                        f"{__lp} 'static_objects' disabled (lvl: {s_o_reason}), skipping check..."
                                     )
                                 # !!!!!!!!!!!!!!!!!!!!
                                 # End of all filters
@@ -1774,7 +1769,7 @@ class ZMClient:
         lp = f"check_for_static_objects::"
         logger.debug(f"{lp} STARTING...")
         aliases: Dict = g.config.label_groups
-        mda = g.config.matching.static_objects.difference
+        _max_diff_area = g.config.matching.static_objects.difference
         _labels: Optional[List[str]] = self.static_objects.labels
         _confs: Optional[List[float]] = self.static_objects.confidence
         _bboxes: Optional[List[List[int]]] = self.static_objects.bbox
@@ -1786,24 +1781,25 @@ class ZMClient:
 
         # Override with monitor filters than zone filters
         if mon_filt and mon_filt.static_objects.difference:
-            mda = mon_filt.static_objects.difference
+            _max_diff_area = mon_filt.static_objects.difference
         if zone_filt and zone_filt.static_objects.difference:
-            mda = zone_filt.static_objects.difference
+            _max_diff_area = zone_filt.static_objects.difference
         if mon_filt and mon_filt.static_objects.labels:
             match_labels = mon_filt.static_objects.labels
         if zone_filt and zone_filt.static_objects.labels:
             match_labels = zone_filt.static_objects.labels
 
-        # todo: inherit ignore_labels from monitor and zone
         ignore_labels: Optional[List[str]] = (
             g.config.matching.static_objects.ignore_labels or []
         )
-        if mon_filt and mon_filt.static_objects.ignore_labels:
-            for lbl in mon_filt.static_objects.ignore_labels:
+
+        # Do zones first as they take precedence over monitor filters
+        if zone_filt and zone_filt.static_objects.ignore_labels:
+            for lbl in zone_filt.static_objects.ignore_labels:
                 if lbl not in ignore_labels:
                     ignore_labels.append(lbl)
-        if zone_filt and zone_filt.static_objects.difference:
-            for lbl in zone_filt.static_objects.ignore_labels:
+        elif mon_filt and mon_filt.static_objects.ignore_labels:
+            for lbl in mon_filt.static_objects.ignore_labels:
                 if lbl not in ignore_labels:
                     ignore_labels.append(lbl)
 
@@ -1812,150 +1808,167 @@ class ZMClient:
                 f"{lp} {current_label} is in static_objects:ignore_labels: {ignore_labels}, skipping",
             )
         else:
-            logger.debug(
-                f"{lp} max difference between current and past object area found! -> {mda}"
-            )
-            if isinstance(mda, float):
-                if mda >= 1.0:
-                    mda = 1.0
-            elif isinstance(mda, int):
-                pass
+            if match_labels is None:
+                logger.debug(
+                    f"{lp} no labels configured in static_objects:labels:, default behavior is to check all labels",
+                )
+                match_labels = [current_label]
+            if current_label in match_labels:
+                logger.debug(
+                    f"{lp} max difference between current and past object area configured -> {_max_diff_area}"
+                )
+                if isinstance(_max_diff_area, float):
+                    if _max_diff_area >= 1.0:
+                        _max_diff_area = 1.0
+                elif isinstance(_max_diff_area, int):
+                    pass
 
-            else:
-                logger.warning(f"{lp} Unknown type for difference, defaulting to 5%")
-                mda = 0.05
-            if _labels:
-                for saved_label, saved_conf, saved_bbox in zip(
-                    _labels, _confs, _bboxes
-                ):
-                    # compare current detection element with saved list from file
-                    found_alias_grouping = False
-                    # check if it is in a label group
-                    if saved_label != current_label:
-                        if aliases:
-                            logger.debug(
-                                f"{lp} currently detected object does not match saved object, "
-                                f"checking label_groups for an aliased match"
-                            )
-
-                            for alias, alias_group in aliases.items():
-                                if (
-                                    saved_label in alias_group
-                                    and current_label in alias_group
-                                ):
-                                    logger.debug(
-                                        f"{lp} saved and current object are in the same label group [{alias}]"
-                                    )
-                                    found_alias_grouping = True
-                                    break
-
-                    elif saved_label == current_label:
-                        found_alias_grouping = True
-                    if not found_alias_grouping:
-                        logger.debug(
-                            f"{lp} saved and current object are not equal or in the same label group, skipping"
-                        )
-                        continue
-                    # Found a match by label/group, now compare the area using Polygon
-                    try:
-                        past_label_polygon = Polygon(self._bbox2points(saved_bbox))
-                    except Exception as e:
-                        logger.error(
-                            f"{lp} Error converting saved_bbox to polygon: {e}, skipping"
-                        )
-                        continue
-                    max_diff_pixels = None
-                    diff_area = None
-                    logger.debug(
-                        f"{lp} comparing '{current_label}' PAST->{saved_bbox} to CURR->{list(zip(*current_bbox_polygon.exterior.coords.xy))[:-1]}",
+                else:
+                    logger.warning(
+                        f"{lp} Unknown type for difference, defaulting to 5%"
                     )
-                    if past_label_polygon.intersects(
-                        current_bbox_polygon
-                    ) or current_bbox_polygon.intersects(past_label_polygon):
-                        if past_label_polygon.intersects(current_bbox_polygon):
-                            logger.debug(
-                                f"{lp} the PAST object INTERSECTS the new object",
-                            )
-                        else:
-                            logger.debug(
-                                f"{lp} the current object INTERSECTS the PAST object",
-                            )
-
-                        if current_bbox_polygon.contains(past_label_polygon):
-                            diff_area = current_bbox_polygon.difference(
-                                past_label_polygon
-                            ).area
-                            if isinstance(mda, float):
-                                max_diff_pixels = current_bbox_polygon.area * mda
+                    _max_diff_area = 0.05
+                if _labels:
+                    for saved_label, saved_conf, saved_bbox in zip(
+                        _labels, _confs, _bboxes
+                    ):
+                        # compare current detection element with saved list from file
+                        found_alias_grouping = False
+                        # check if it is in a label group
+                        if saved_label != current_label:
+                            # 'label group' support
+                            if aliases:
                                 logger.debug(
-                                    f"{lp} converted {mda * 100:.2f}% difference from '{current_label}' "
-                                    f"is {max_diff_pixels} pixels"
+                                    f"{lp} currently detected object does not match saved object, "
+                                    f"checking label_groups for an aliased match"
                                 )
-                            elif isinstance(mda, int):
-                                max_diff_pixels = mda
-                        else:
-                            diff_area = past_label_polygon.difference(
-                                current_bbox_polygon
-                            ).area
-                            if isinstance(mda, float):
-                                max_diff_pixels = past_label_polygon.area * mda
-                                logger.debug(
-                                    f"{lp} converted {mda * 100:.2f}% difference from '{saved_label}' "
-                                    f"is {max_diff_pixels} pixels"
-                                )
-                            elif isinstance(mda, int):
-                                max_diff_pixels = mda
-                        if diff_area is not None and diff_area <= max_diff_pixels:
-                            # FIXME: if an object is removed, the PAST object it matched should be propagated to the next event
-                            logger.debug(
-                                f"{lp} removing '{current_label}' as it seems to be approximately in the same spot"
-                                f" as it was detected last time based on '{mda}' -> Difference in pixels: {diff_area} "
-                                f"- Configured maximum difference in pixels: {max_diff_pixels}"
-                            )
-                            _past_match = (saved_label, saved_conf, saved_bbox)
-                            propagations = g.static_objects.get("propagate")
-                            if propagations is None:
-                                propagations = []
-                            if propagations:
-                                if _past_match not in propagations:
-                                    propagations.append(_past_match)
 
-                            return False
+                                for alias, alias_group in aliases.items():
+                                    if (
+                                        saved_label in alias_group
+                                        and current_label in alias_group
+                                    ):
+                                        logger.debug(
+                                            f"{lp} saved and current object are in the same label group [{alias}]"
+                                        )
+                                        found_alias_grouping = True
+                                        break
 
-                            # if saved_bbox not in mpd_b:
-                            #     logger.debug(
-                            #         f"{lp} appending this saved object to the mpd "
-                            #         f"buffer as it has removed a detection and should be propagated "
-                            #         f"to the next event"
-                            #     )
-                            #     mpd_b.append(saved_bs[saved_idx])
-                            #     mpd_l.append(saved_label)
-                            #     mpd_c.append(saved_cs[saved_idx])
-                            # new_err.append(b)
-                        elif diff_area is not None and diff_area > max_diff_pixels:
+                        elif saved_label == current_label:
+                            found_alias_grouping = True
+                        if not found_alias_grouping:
                             logger.debug(
-                                f"{lp} allowing '{current_label}' -> the difference in the area of last detection "
-                                f"to this detection is '{diff_area:.2f}', a minimum of {max_diff_pixels:.2f} "
-                                f"is needed to not be considered 'in the same spot'",
+                                f"{lp} saved and current object are not equal or in the same label group, skipping"
                             )
-                            return True
-                        elif diff_area is None:
-                            logger.debug(
-                                f"DEBUG>>>'MPD' {diff_area = } - whats the issue?"
+                            continue
+                        # Found a match by label/group, now compare the area using Polygon
+                        try:
+                            past_label_polygon = Polygon(self._bbox2points(saved_bbox))
+                        except Exception as e:
+                            logger.error(
+                                f"{lp} Error converting saved_bbox to polygon: {e}, skipping"
                             )
-                        else:
-                            logger.debug(
-                                f"WHATS GOING ON? {diff_area = } -- {max_diff_pixels = }"
-                            )
-                    # Saved does not intersect the current object/label
-                    else:
+                            continue
+                        max_diff_pixels = None
+                        diff_area = None
                         logger.debug(
-                            f"{lp} current detection '{current_label}' is not near enough to '"
-                            f"{saved_label}' to evaluate for match past detection filter"
+                            f"{lp} comparing '{current_label}' PAST->{past_label_polygon} to CURR->{list(zip(*current_bbox_polygon.exterior.coords.xy))[:-1]}",
                         )
+                        if past_label_polygon.intersects(
+                            current_bbox_polygon
+                        ) or current_bbox_polygon.intersects(past_label_polygon):
+                            if past_label_polygon.intersects(current_bbox_polygon):
+                                logger.debug(
+                                    f"{lp} the PAST object INTERSECTS the new object",
+                                )
+                            else:
+                                logger.debug(
+                                    f"{lp} the current object INTERSECTS the PAST object",
+                                )
+
+                            if current_bbox_polygon.contains(past_label_polygon):
+                                diff_area = current_bbox_polygon.difference(
+                                    past_label_polygon
+                                ).area
+                                if isinstance(_max_diff_area, float):
+                                    max_diff_pixels = (
+                                        current_bbox_polygon.area * _max_diff_area
+                                    )
+                                    logger.debug(
+                                        f"{lp} converted {_max_diff_area * 100:.2f}% difference from '{current_label}' "
+                                        f"is {max_diff_pixels} pixels"
+                                    )
+                                elif isinstance(_max_diff_area, int):
+                                    max_diff_pixels = _max_diff_area
+                            else:
+                                diff_area = past_label_polygon.difference(
+                                    current_bbox_polygon
+                                ).area
+                                if isinstance(_max_diff_area, float):
+                                    max_diff_pixels = (
+                                        past_label_polygon.area * _max_diff_area
+                                    )
+                                    logger.debug(
+                                        f"{lp} converted {_max_diff_area * 100:.2f}% difference from '{saved_label}' "
+                                        f"is {max_diff_pixels} pixels"
+                                    )
+                                elif isinstance(_max_diff_area, int):
+                                    max_diff_pixels = _max_diff_area
+                            if diff_area is not None and diff_area <= max_diff_pixels:
+                                # FIXME: if an object is removed, the PAST object it matched should be propagated to the next event
+                                logger.debug(
+                                    f"{lp} removing '{current_label}' as it seems to be approximately in the same spot"
+                                    f" as it was detected last time based on '{_max_diff_area}' -> Difference in pixels: {diff_area} "
+                                    f"- Configured maximum difference in pixels: {max_diff_pixels}"
+                                )
+                                _past_match = (saved_label, saved_conf, saved_bbox)
+                                propagations = g.static_objects.get("propagate")
+                                if propagations is None:
+                                    propagations = []
+                                if propagations:
+                                    if _past_match not in propagations:
+                                        propagations.append(_past_match)
+
+                                return False
+
+                                # if saved_bbox not in mpd_b:
+                                #     logger.debug(
+                                #         f"{lp} appending this saved object to the mpd "
+                                #         f"buffer as it has removed a detection and should be propagated "
+                                #         f"to the next event"
+                                #     )
+                                #     mpd_b.append(saved_bs[saved_idx])
+                                #     mpd_l.append(saved_label)
+                                #     mpd_c.append(saved_cs[saved_idx])
+                                # new_err.append(b)
+                            elif diff_area is not None and diff_area > max_diff_pixels:
+                                logger.debug(
+                                    f"{lp} allowing '{current_label}' -> the difference in the area of last detection "
+                                    f"to this detection is '{diff_area:.2f}', a minimum of {max_diff_pixels:.2f} "
+                                    f"is needed to not be considered 'in the same spot'",
+                                )
+                                return True
+                            elif diff_area is None:
+                                logger.debug(
+                                    f"DEBUG>>>'MPD' {diff_area = } - whats the issue?"
+                                )
+                            else:
+                                logger.debug(
+                                    f"WHATS GOING ON? {diff_area = } -- {max_diff_pixels = }"
+                                )
+                        # Saved does not intersect the current object/label
+                        else:
+                            logger.debug(
+                                f"{lp} current detection '{current_label}' is not near enough to '"
+                                f"{saved_label}' to evaluate for match past detection filter"
+                            )
+                else:
+                    logger.debug(
+                        f"{lp} no saved detections to compare to, allowing '{current_label}'"
+                    )
             else:
                 logger.debug(
-                    f"{lp} no saved detections to compare to, allowing '{current_label}'"
+                    f"{lp} '{current_label}' is not in static_objects:labels: {match_labels}, skipping..."
                 )
         return True
 
@@ -1964,25 +1977,27 @@ class ZMClient:
         # construct each object label filter
         if filters["object"]["labels"]:
             for label_ in filters["object"]["labels"]:
-                filters["object"]["labels"][label_] = OverRideObjectFilters.construct(
+                filters["object"]["labels"][
+                    label_
+                ] = OverRideObjectFilters.model_construct(
                     **filters["object"]["labels"][label_],
                 )
 
-        filters["object"] = OverRideObjectFilters.construct(
+        filters["object"] = OverRideObjectFilters.model_construct(
             **filters["object"],
         )
-        filters["face"] = OverRideFaceFilters.construct(
+        filters["face"] = OverRideFaceFilters.model_construct(
             **filters["face"],
         )
-        filters["alpr"] = OverRideAlprFilters.construct(
+        filters["alpr"] = OverRideAlprFilters.model_construct(
             **filters["alpr"],
         )
-        return OverRideMatchFilters.construct(**filters)
+        return OverRideMatchFilters.model_construct(**filters)
 
     def load_config(self) -> Optional[ConfigFileModel]:
         """Parse the YAML configuration file. In the future this will read DB values"""
         cfg: Dict = {}
-        _start = perf_counter()
+        _start = time.time()
         self.raw_config = self.config_file.read_text()
 
         try:
@@ -2034,7 +2049,7 @@ class ZMClient:
         self.parsed_cfg = dict(cfg)
         _x = ConfigFileModel(**cfg)
         logger.debug(
-            f"perf:: Config file loaded and validated in {perf_counter() - _start:.5f} seconds"
+            f"perf:: Config file loaded and validated in {time.time() - _start:.5f} seconds"
         )
         return _x
 
@@ -2117,7 +2132,7 @@ class ZMClient:
                     po.request_data.title = f"({g.eid}) {g.mon_name}->{g.event_cause}"
                     po.request_data.priority = _cfg.priority
                     po.request_data.html = 1
-                    po.request_data.timestamp = time()
+                    po.request_data.timestamp = time.time()
                     if noti_cfg.pushover.clickable_link:
                         po.request_data.url_title = "View event in browser"
                         push_url_opts: NotificationZMURLOptions = (
@@ -2380,8 +2395,8 @@ class ZMClient:
 
         # :detected: needs to be in the Notes field for the Event in ZM
         pred = pred.strip().rstrip(",")  # remove trailing comma
-        pred_out = f"{prefix}:detected:{pred}"
-        pred = f"{prefix}{pred}"
+        pred_out = f":detected:{pred}"
+        pred = f"{pred}"
         new_notes = pred_out
         logger.info(f"{lp}prediction: '{pred}'")
         # Check notes and replace if necessary
@@ -2390,15 +2405,18 @@ class ZMClient:
         # if notes_zone:
 
         new_notes = f"{new_notes} {g.event_cause}"
-        if old_notes is not None and g.config.zoneminder.misc.write_notes:
-            if new_notes != old_notes:
+        if g.config.zoneminder.misc.write_notes:
+            _write_notes = False
+            if old_notes is not None:
+                if new_notes != old_notes:
+                    _write_notes = True
+                elif new_notes == old_notes:
+                    logger.debug(f"{lp} notes do not need updating!")
+            else:
+                _write_notes = True
+
+            if _write_notes:
                 try:
-                    # events_url = f"{g.api.api_url}/events/{g.eid}.json"
-                    # await g.api.make_async_request(
-                    #     url=events_url,
-                    #     payload={"Event[Notes]": new_notes},
-                    #     type_action="put",
-                    # )
                     g.db.set_event_notes(g.eid, new_notes)
                 except Exception as custom_push_exc:
                     logger.error(
@@ -2408,8 +2426,6 @@ class ZMClient:
                     logger.debug(
                         f"{lp} replaced old note: '{new_notes}'",
                     )
-            elif new_notes == old_notes:
-                logger.debug(f"{lp} notes do not need updating!")
 
         # Check version of zm, if 1.37.44 or greater, we can manage tags
         zm_ver = g.db.get_zm_version()
@@ -2423,23 +2439,21 @@ class ZMClient:
         elif zm_ver.major > 1:
             tags_support = True
 
-        if tags_support:
-            # check that the detected object label has a tag created
-
-
-            # check if the event has tags
-            tags = g.db.get_event_tags(g.eid)
-            if tags:
-                # check if the event has the detected labels tag
-                if "detected" not in tags:
-                    # add the detected tag
-                    tags.append("detected")
-                    g.db.set_event_tags(g.eid, tags)
-            else:
-                # add the detected tag
-                tags = ["detected"]
-                g.db.set_event_tags(g.eid, tags)
-
+        # if tags_support:
+        #     # check that the detected object label has a tag created
+        #
+        #     # check if the event has tags
+        #     tags = g.db.get_event_tags(g.eid)
+        #     if tags:
+        #         # check if the event has the detected labels tag
+        #         if "detected" not in tags:
+        #             # add the detected tag
+        #             tags.append("detected")
+        #             g.db.set_event_tags(g.eid, tags)
+        #     else:
+        #         # add the detected tag
+        #         tags = ["detected"]
+        #         g.db.set_event_tags(g.eid, tags)
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)

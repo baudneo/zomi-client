@@ -28,10 +28,9 @@ except ImportError:
     ResultProxy: Optional[ResultProxy] = None
 
 from ...Log import CLIENT_LOGGER_NAME
-from ...Models.config import ZMDBSettings, ClientEnvVars
 
 if TYPE_CHECKING:
-    from ...Models.config import GlobalConfig
+    from ...Models.config import GlobalConfig, ZMDBSettings, ClientEnvVars
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 LP = "zmdb::"
@@ -66,7 +65,7 @@ class ZMDB:
         else:
             self.env = g.Environment
 
-        logger.debug(f"{LP} ENV VARS = {self.env}")
+        # logger.debug(f"{LP} ClientEnvVars = {self.env}")
 
         self.engine = None
         self.connection = None
@@ -81,20 +80,12 @@ class ZMDB:
         self._db_create()
 
     async def get_all_event_data(self, eid):
-        s = time.perf_counter()
         if g.Event is None:
             g.Event = {}
-        self.event_frames_len()
         g.Frame = self.event_frames_data(eid)
-        g.Frame = self.event_notes(eid)
-        self.event_enddatetime(eid)
-
-        g.Event["Id"] = eid
         g.Event["MonitorId"] = self.mid_from_eid(eid)
-        g.Event["StorageId"] = self._storage_id_from_eid(eid)
-        logger.debug(
-            f"perf:{LP} get_all_event_data() took {time.perf_counter() - s:.5f} seconds"
-        )
+        g.Event["StorageId"] = self.storage_id_from_eid(eid)
+        g.Event['Length'] = self.length_from_eid(eid)
 
     def get_zm_version(self) -> ZMVersion:
         """"""
@@ -134,13 +125,25 @@ class ZMDB:
             g.Event["Frames"] = row[0]
         return g.Event["Frames"]
 
-    def event_enddatetime(self, eid: int):
+    def length_from_eid(self, eid: int) -> Optional[float]:
+        _select: select = select(self.meta.tables["Events"].c.Length).where(
+            self.meta.tables["Events"].c.Id == eid
+        )
+        result: CursorResult = self.run_select(_select)
+        x: Optional[float] = None
+        for row in result:
+            x = row[0]
+        return x
+
+    def end_datetime_from_eid(self, eid: int):
         _select: select = select(self.meta.tables["Events"].c.EndDateTime).where(
             self.meta.tables["Events"].c.Id == eid
         )
         result: CursorResult = self.run_select(_select)
         for row in result:
             g.Event["EndDateTime"] = row[0]
+        if g.Event["EndDateTime"] is None or not g.Event["EndDateTime"]:
+            g.Event["EndDateTime"] = False
         return g.Event["EndDateTime"]
 
     def get_snapshot_fid(self):
@@ -190,7 +193,7 @@ class ZMDB:
             except Exception as exc:
                 logger.error(f"{LP} error opening ZoneMinder .conf files: {exc}")
             else:
-                logger.debug(f"{LP} ZoneMinder .conf files -> {files}")
+                # logger.debug(f"{LP} ZoneMinder .conf files -> {files}")
                 # for section in config_file.sections():
                 #     for key, value in config_file.items(section):
                 #         logger.debug(f"{section} >>> {key} = {value}")
@@ -206,11 +209,11 @@ class ZMDB:
             "name": "zm",
             "driver": "mysql+pymysql",
         }
-        # todo: get db type from zm .conf files for driver string?
+        # todo: get db type from zm .conf files for driver string? postgres vs mysql
 
         self.conf_file_data = self.read_zm_configs()
         self.cgi_path = self.conf_file_data.get(
-            "zm_path_cgi", "COULDNT GET: ZM_PATH_CGI"
+            "zm_path_cgi", "COULDN'T GET: ZM_PATH_CGI"
         )
         # ZM_PATH_CGI=/usr/lib/zoneminder/cgi-bin
         _pydantic_attrs = [
@@ -256,21 +259,21 @@ class ZMDB:
                 continue
             elif _attr in ["host", "port", "user", "password", "name", "driver"]:
                 if not (set_to := getattr(db_config_with_env, _attr)):
-                    # env var is not set, try to get them from ZM .conf files
+                    # env var is not set, try to get attr from ZM .conf files
                     xtra_ = ""
                     unset_ = ""
                     conf_val = f"ZM_DB_{_attr.upper()}"
                     if _attr == "password":
                         conf_val = f"ZM_DB_PASS"
-                    if not set_to:
-                        unset_ += "ENV "
-                        if conf_val in self.conf_file_data:
-                            set_to = (
-                                self.conf_file_data[conf_val]
-                                if _attr != "password"
-                                else SecretStr(self.conf_file_data[conf_val])
-                            )
-                            xtra_ = f" (defaulting to '{set_to}' from ZM .conf files)"
+
+                    unset_ += "ENV "
+                    if conf_val in self.conf_file_data:
+                        set_to = (
+                            self.conf_file_data[conf_val]
+                            if _attr != "password"
+                            else SecretStr(self.conf_file_data[conf_val])
+                        )
+                        xtra_ = f" (defaulting to '{set_to}' from ZM .conf files)"
 
                 if g and g.config:
                     if g.config.zoneminder.db:
@@ -335,7 +338,7 @@ class ZMDB:
         self.meta = MetaData()
         self.meta.reflect(
             bind=self.engine,
-            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames"],
+            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones"],
         )
 
     def run_select(self, select_stmt: select) -> ResultProxy:
@@ -362,7 +365,6 @@ class ZMDB:
 
     def event_frames_data(self, eid: int):
         event_frames: List[Dict[str, Any]] = []
-        s = time.perf_counter()
         _select: select = select(self.meta.tables["Frames"]).where(
             self.meta.tables["Frames"].c.EventId == eid
         )
@@ -379,11 +381,7 @@ class ZMDB:
             fdict["TimeStampSecs"] = int(datetime.timestamp(row[4]))
             event_frames.append(fdict)
         result.close()
-        logger.debug(
-            f"{LP} get_event_frames() took {time.perf_counter() - s:.5f} seconds"
-        )
-        logger.debug(f"{LP} {event_frames = }")
-        g.Frame = event_frames
+        # logger.debug(f"{LP} {event_frames = }")
         return event_frames
 
     def _mon_name_from_mid(self, mid: int) -> str:
@@ -398,7 +396,7 @@ class ZMDB:
         mid_name_result.close()
         return mon_name
 
-    def _mon_preBuffer_from_mid(self, mid: int) -> int:
+    def mon_preBuffer_from_mid(self, mid: int) -> int:
         mon_pre: int = 0
         pre_event_select: select = select(
             self.meta.tables["Monitors"].c.PreEventCount
@@ -409,7 +407,7 @@ class ZMDB:
         result.close()
         return int(mon_pre)
 
-    def _mon_postBuffer_from_mid(self, mid: int) -> int:
+    def mon_postBuffer_from_mid(self, mid: int) -> int:
         mon_post: int = 0
         post_event_select: select = select(
             self.meta.tables["Monitors"].c.PostEventCount
@@ -421,13 +419,164 @@ class ZMDB:
         select_result.close()
         return int(mon_post)
 
-    def _mon_fps_from_mid(self, mid: int) -> Decimal:
+    def zones_from_mid(self, mid: int) -> List[Dict[str, Any]]:
+        zones: List[Dict[str, Any]] = []
+        _select: select = select(self.meta.tables["Zones"]).where(
+            self.meta.tables["Zones"].c.MonitorId == mid
+        )
+        result: CursorResult = self.run_select(_select)
+        for row in result:
+            zdict = {}
+            zdict["Id"] = row[0]
+            zdict["MonitorId"] = row[1]
+            zdict["Name"] = row[2]
+            zdict["Type"] = row[3]
+            zdict["Units"] = row[4]
+            zdict["NumCoords"] = row[5]
+            zdict["Coords"] = row[6]
+            zdict["Area"] = row[7]
+            zdict["AlarmRGB"] = row[8]
+            zdict["CheckMethod"] = row[9]
+            zdict["MinPixelThreshold"] = row[10]
+            zdict["MaxPixelThreshold"] = row[11]
+            zdict["MinAlarmPixels"] = row[12]
+            zdict["MaxAlarmPixels"] = row[13]
+            zdict["FilterX"] = row[14]
+            zdict["FilterY"] = row[15]
+            zdict["MinFilterPixels"] = row[16]
+            zdict["MaxFilterPixels"] = row[17]
+            zdict["MinBlobPixels"] = row[18]
+            zdict["MaxBlobPixels"] = row[19]
+            zdict["MinBlobs"] = row[20]
+            zdict["MaxBlobs"] = row[21]
+            zdict["OverloadFrames"] = row[22]
+            zdict["ExtendAlarmFrames"] = row[22]
+
+            zones.append(zdict)
+        result.close()
+        return zones
+
+    async def import_zones(self):
+        """A function to import zones that are defined in the ZoneMinder web GUI instead of defining
+        zones in the per-monitor section of the configuration file.
+
+
+        :return:
+        """
+        from ...Models.config import ZoneMinderSettings, MonitorsSettings
+
+        imported_zones: List = []
+        lp: str = f"{LP}import zones::"
+        mid_cfg: Optional[MonitorsSettings] = None
+        existing_zones: Dict = {}
+        if g.config.detection_settings.import_zones:
+            from ...Models.config import MonitorZones
+
+            mid_cfg = g.config.monitors.get(g.mid)
+            if mid_cfg:
+                existing_zones: Dict = mid_cfg.zones
+            if existing_zones is None:
+                existing_zones = {}
+            monitor_resolution: Tuple[int, int] = (int(g.mon_width), int(g.mon_height))
+            zones = self.zones_from_mid(g.mid)
+            if zones:
+                logger.debug(
+                    f"{lp} {len(zones)} ZM zones found, checking for 'Inactive'/'Private' zones"
+                )
+                for zone in zones:
+                    zone_name: str = zone.get("Name", "")
+                    zone_type: str = zone.get("Type", "")
+                    zone_points: str = zone.get("Coords", "")
+                    # logger.debug(f"{lp} BEGINNING OF ZONE LOOP - {zone_name=} -- {zone_type=} -- {zone_points=}")
+                    if zone_type.casefold() in [
+                        "inactive",
+                        "privacy",
+                        "preclusive",
+                    ]:
+                        logger.debug(
+                            f"{lp} skipping '{zone_name}' as it is set to '{zone_type.capitalize()}'"
+                        )
+                        continue
+
+                    if not mid_cfg:
+                        logger.debug(
+                            f"{lp} no monitor configuration found for monitor {g.mid}, "
+                            f"creating a new one and adding zone '{zone_name}' as first entry"
+                        )
+                        mid_cfg = MonitorsSettings(
+                            models=None,
+                            object_confirm=None,
+                            static_objects=None,
+                            filters=None,
+                            zones={
+                                zone_name: MonitorZones(
+                                    points=zone_points,
+                                    resolution=monitor_resolution,
+                                    imported=True,
+                                )
+                            },
+                        )
+                        g.config.monitors[g.mid] = mid_cfg
+                        existing_zones = mid_cfg.zones
+                        continue
+
+                    if mid_cfg:
+                        # logger.debug(f"{lp} existing zones found: {existing_zones}")
+                        if not (existing_zone := existing_zones.get(zone_name)):
+                            logger.debug(
+                                f"{lp} Imported zone->'{zone_name}' is "
+                                f"being converted into a ML zone for monitor {g.mid}"
+                            )
+                            new_zone = MonitorZones(
+                                points=zone_points,
+                                resolution=monitor_resolution,
+                                imported=True,
+                            )
+                            g.config.monitors[g.mid].zones[zone_name] = new_zone
+                            imported_zones.append({zone_name: new_zone})
+
+                        else:
+                            logger.debug(
+                                f"{lp} '{zone_name}' is defined in zomi-client monitor {g.mid} configuration"
+                            )
+                            # only update if points are not set
+                            if not existing_zone.points:
+                                # logger.debug(f"{lp} updating points for '{zone_name}'")
+                                ex_z_dict = existing_zone.dict()
+                                # logger.debug(f"{lp} existing zone AS DICT: {ex_z_dict}")
+                                ex_z_dict["points"] = zone_points
+                                ex_z_dict["resolution"] = monitor_resolution
+                                # logger.debug(f"{lp} updated zone AS DICT: {ex_z_dict}")
+                                existing_zone = MonitorZones(**ex_z_dict)
+                                # logger.debug(f"{lp} updated zone AS MODEL: {existing_zone}")
+                                g.config.monitors[g.mid].zones[
+                                    zone_name
+                                ] = existing_zone
+                                imported_zones.append({zone_name: existing_zone})
+                                logger.debug(
+                                    f"{lp} '{zone_name}' is defined in the config, updated points and resolution to match ZM"
+                                )
+                            else:
+                                logger.warning(
+                                    f"{lp} '{zone_name}' HAS POINTS SET which is interpreted "
+                                    f"as a ML configured zone, not importing ZM defined zone points"
+                                )
+                    # logger.debug(f"{lp}DBG>>> END OF ZONE LOOP for '{zone_name}'")
+            else:
+                logger.debug(f"{lp} no ZM defined zones found for monitor {g.mid}")
+        else:
+            logger.debug(f"{lp} import_zones() is disabled, skipping")
+        # logger.debug(f"{lp} ALL ZONES with imported zones => {imported_zones}")
+        return imported_zones
+        
+    def mon_fps_from_mid(self, mid: int) -> Decimal:
         mon_fps: Decimal = Decimal(0)
         # Get Monitor capturing FPS
         ms_select: select = select(
             self.meta.tables["Monitor_Status"].c.CaptureFPS
         ).where(self.meta.tables["Monitor_Status"].c.MonitorId == mid)
-        select_result: CursorResult = self.connection.execute(ms_select)
+
+        select_result: CursorResult = self.run_select(ms_select)
         for mons_row in select_result:
             mon_fps = float(mons_row[0])
         select_result.close()
@@ -466,7 +615,7 @@ class ZMDB:
         scheme_result.close()
         return scheme
 
-    def _storage_id_from_eid(self, eid: int) -> int:
+    def storage_id_from_eid(self, eid: int) -> int:
         storage_id: Optional[int] = None
         storage_id_select: select = select(
             self.meta.tables["Events"].c.StorageId
@@ -481,7 +630,7 @@ class ZMDB:
             )  # Catch 0 and treat as 1 (zm code issue)
         return storage_id
 
-    def _start_datetime_from_eid(self, eid: int) -> datetime:
+    def start_datetime_from_eid(self, eid: int) -> datetime:
         start_datetime: Optional[datetime] = None
         start_datetime_select: select = select(
             self.meta.tables["Events"].c.StartDateTime
@@ -576,7 +725,7 @@ class ZMDB:
         # FIX ME!!!! A hammer to grab all the data from the DB for a given event ID
         if g.Event is None:
             g.Event = {}
-        _start = time.perf_counter()
+        _start = time.time()
         event_exists: bool = self.eid_exists(eid)
         if not event_exists:
             raise ValueError(f"Event ID {eid} does not exist in ZoneMinder DB")
@@ -585,14 +734,15 @@ class ZMDB:
         event_path: Optional[Union[Path, str]] = None
         mid: Optional[Union[str, int]] = self.mid_from_eid(eid)
         mon_name: Optional[str] = self._mon_name_from_mid(mid)
-        mon_post: Optional[Union[str, int]] = self._mon_postBuffer_from_mid(mid)
-        mon_pre: Optional[Union[str, int]] = self._mon_preBuffer_from_mid(mid)
-        mon_fps: Optional[Union[float, Decimal]] = self._mon_fps_from_mid(mid)
+        mon_post: Optional[Union[str, int]] = self.mon_postBuffer_from_mid(mid)
+        mon_pre: Optional[Union[str, int]] = self.mon_preBuffer_from_mid(mid)
+        mon_fps: Optional[Union[float, Decimal]] = self.mon_fps_from_mid(mid)
         reason: Optional[str] = self._reason_from_eid(eid)
         notes: Optional[str] = self.event_notes(eid)
         scheme: Optional[str] = self._scheme_from_eid(eid)
-        storage_id: Optional[int] = self._storage_id_from_eid(eid)
-        start_datetime: Optional[datetime] = self._start_datetime_from_eid(eid)
+        storage_id: Optional[int] = self.storage_id_from_eid(eid)
+        start_datetime: Optional[datetime] = self.start_datetime_from_eid(eid)
+        end_datetime: Optional[datetime] = self.end_datetime_from_eid(eid)
         height, width, color = self._get_mon_shape_from_mid(mid)
         ring_buffer: Optional[int] = self._get_image_buffer_from_mid(mid)
         if storage_id:
@@ -657,6 +807,12 @@ class ZMDB:
             logger.warning(
                 f"{LP} the database query did not return any start datetime ('StartDateTime') for this event!"
             )
+        if end_datetime:
+            final_str += f"Event EndDateTime: {end_datetime} "
+        else:
+            logger.warning(
+                f"{LP} the database query did not return any end datetime ('EndDateTime') for this event!"
+            )
         if storage_path:
             final_str += f"Event Storage Path: {storage_path} "
         else:
@@ -715,7 +871,7 @@ class ZMDB:
             logger.warning(f"{LP} could not calculate the storage path for this event!")
 
         logger.debug(
-            f"perf:{LP} Grabbing DB info took {time.perf_counter() - _start:.5f} s ----> {final_str.rstrip()}"
+            f"perf:{LP} Grabbing DB info took {time.time() - _start:.5f} s ----> {final_str.rstrip()}"
         )
         return (
             mid,

@@ -34,10 +34,8 @@ except ImportError as e:
     disable_warnings: Optional[disable_warnings] = None
     InsecureRequestWarning: Optional[InsecureRequestWarning] = None
 
-from ...Models.config import ZoneMinderSettings, MonitorsSettings
-
 if TYPE_CHECKING:
-    from ...Models.config import GlobalConfig
+    from ...Models.config import GlobalConfig, ZoneMinderSettings
     import aiohttp
     from pydantic import SecretStr
     from requests import Response, Session
@@ -61,6 +59,8 @@ class ZMAPI:
 
         :return:
         """
+        from ...Models.config import ZoneMinderSettings, MonitorsSettings
+
         imported_zones: List = []
         lp: str = "api::import zones::"
         mid_cfg: Optional[MonitorsSettings] = None
@@ -111,6 +111,7 @@ class ZMAPI:
                                     zone_name: MonitorZones(
                                         points=zone_points,
                                         resolution=monitor_resolution,
+                                        imported=True,
                                     )
                                 },
                             )
@@ -122,48 +123,46 @@ class ZMAPI:
                             existing_zones = {}
 
                         if mid_cfg:
-                            if existing_zones is not None:
-                                # logger.debug(f"{lp} existing zones found: {existing_zones}")
-                                if not (existing_zone := existing_zones.get(zone_name)):
-                                    logger.debug(
-                                        f"{lp} Zone->'{zone_name}' is being constructed into a model and imported into monitor {g.mid} config"
-                                    )
-                                    new_zone = MonitorZones(
-                                        points=zone_points,
-                                        resolution=monitor_resolution,
-                                        imported=True,
-                                    )
-                                    g.config.monitors[g.mid].zones[zone_name] = new_zone
-                                    imported_zones.append({zone_name: new_zone})
+                            # logger.debug(f"{lp} existing zones found: {existing_zones}")
+                            if not (existing_zone := existing_zones.get(zone_name)):
+                                logger.debug(
+                                    f"{lp} Imported zone->'{zone_name}' is "
+                                    f"being converted into a ML zone for monitor {g.mid}"
+                                )
+                                new_zone = MonitorZones(
+                                    points=zone_points,
+                                    resolution=monitor_resolution,
+                                    imported=True,
+                                )
+                                g.config.monitors[g.mid].zones[zone_name] = new_zone
+                                imported_zones.append({zone_name: new_zone})
 
-                                else:
+                            else:
+                                logger.debug(
+                                    f"{lp} '{zone_name}' is defined in zomi-client monitor {g.mid} configuration"
+                                )
+                                # only update if points are not set
+                                if not existing_zone.points:
+                                    # logger.debug(f"{lp} updating points for '{zone_name}'")
+                                    ex_z_dict = existing_zone.dict()
+                                    # logger.debug(f"{lp} existing zone AS DICT: {ex_z_dict}")
+                                    ex_z_dict["points"] = zone_points
+                                    ex_z_dict["resolution"] = monitor_resolution
+                                    # logger.debug(f"{lp} updated zone AS DICT: {ex_z_dict}")
+                                    existing_zone = MonitorZones(**ex_z_dict)
+                                    # logger.debug(f"{lp} updated zone AS MODEL: {existing_zone}")
+                                    g.config.monitors[g.mid].zones[
+                                        zone_name
+                                    ] = existing_zone
+                                    imported_zones.append({zone_name: existing_zone})
                                     logger.debug(
-                                        f"{lp} '{zone_name}' is defined in ZM ML monitor {g.mid} configuration -> {existing_zone}"
+                                        f"{lp} '{zone_name}' is defined in the config, updated points and resolution to match ZM"
                                     )
-                                    # only update if points are not set
-                                    if not existing_zone.points:
-                                        # logger.debug(f"{lp} updating points for '{zone_name}'")
-                                        ex_z_dict = existing_zone.dict()
-                                        # logger.debug(f"{lp} existing zone AS DICT: {ex_z_dict}")
-                                        ex_z_dict["points"] = zone_points
-                                        ex_z_dict["resolution"] = monitor_resolution
-                                        # logger.debug(f"{lp} updated zone AS DICT: {ex_z_dict}")
-                                        existing_zone = MonitorZones(**ex_z_dict)
-                                        # logger.debug(f"{lp} updated zone AS MODEL: {existing_zone}")
-                                        g.config.monitors[g.mid].zones[
-                                            zone_name
-                                        ] = existing_zone
-                                        imported_zones.append(
-                                            {zone_name: existing_zone}
-                                        )
-                                        logger.debug(
-                                            f"{lp} '{zone_name}' already exists, updated points and resolution"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"{lp} '{zone_name}' HAS POINTS SET which is interpreted "
-                                            f"as a ZM ML configured zone, not importing ZM defined zone points"
-                                        )
+                                else:
+                                    logger.warning(
+                                        f"{lp} '{zone_name}' HAS POINTS SET which is interpreted "
+                                        f"as a ZM ML configured zone, not importing ZM defined zone points"
+                                    )
                         # logger.debug(f"{lp}DBG>>> END OF ZONE LOOP for '{zone_name}'")
                 else:
                     logger.debug(f"{lp} no ZM defined zones found for monitor {g.mid}")
@@ -181,7 +180,7 @@ class ZMAPI:
         from pydantic import SecretStr
 
         g = get_global_config()
-        self.token_file = g.config.system.variable_data_path / "api_access_token"
+        self.token_file = g.config.system.variable_data_path / "misc/.api_access_token.pkl"
         self.access_token: Optional[str] = ""
         self.refresh_token: Optional[str] = ""
         self.config: ZoneMinderSettings.ZMAPISettings = config.api
@@ -572,7 +571,7 @@ class ZMAPI:
         :param event_id: (int) the event ID to query.
         """
         lp: str = "api::get_all_event_data::"
-        _start = time.perf_counter()
+        _start = time.time()
         event: Optional[Dict] = None
         monitor: Optional[Dict] = None
         frame: Optional[List] = None
@@ -584,7 +583,7 @@ class ZMAPI:
         frame = api_event_response.get("event", {}).get("Frame")
         event_tot_frames = len(frame)
         logger.debug(
-            f"{lp} got event data in {time.perf_counter() - _start:.04f} seconds",
+            f"{lp} got event data in {time.time() - _start:.04f} seconds",
         )
         return event, monitor, frame, event_tot_frames
 
@@ -684,7 +683,11 @@ class ZMAPI:
                         boundary = b"--" + boundary
 
                     if transfer_encoding == "chunked":
+                        # if not content_length:
+                        #     logger.debug(f"{lp} no content-length - is this an empty response? - {content_length=}")
+
                         logger.debug(f"{lp} iterating chunks")
+
                         chunk_size = 1024
                         _resp = b""
                         _begin = False
@@ -692,7 +695,6 @@ class ZMAPI:
 
                         # ZMS mode=jpeg sends a stream of images, we only want the fid we asked for
                         # ZM interprets that as the starting frame of the stream.
-
                         async for chunk in resp.content.iter_chunked(chunk_size):
                             i += 1
                             if boundary and boundary in chunk:
@@ -740,6 +742,7 @@ class ZMAPI:
                                         for x in nph_headers.split(b"\r\n")
                                         if x
                                     }
+                                    # logger.debug(f"{lp} nph_headers = {nph_headers}")
                                     if (
                                         "Content-Type" in nph_headers
                                         and nph_headers["Content-Type"]

@@ -1,9 +1,9 @@
 import logging
 from enum import Enum
 
-from ...Server.Log import SERVER_LOGGER_NAME
+from ..Log import CLIENT_LOGGER_NAME
 
-logger = logging.getLogger(SERVER_LOGGER_NAME)
+logger = logging.getLogger(CLIENT_LOGGER_NAME)
 
 
 class ModelType(str, Enum):

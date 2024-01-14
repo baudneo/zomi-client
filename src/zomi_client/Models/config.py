@@ -3,7 +3,17 @@ import re
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Tuple, Pattern, Union, Any, Optional
+from typing import (
+    Dict,
+    List,
+    Tuple,
+    Pattern,
+    Union,
+    Any,
+    Optional,
+    AnyStr,
+    TYPE_CHECKING, Annotated,
+)
 
 import numpy as np
 from pydantic import (
@@ -32,6 +42,8 @@ from .validators import (
 )
 from ..Log import CLIENT_LOGGER_NAME
 from ..Models.DEFAULTS import *
+from ..Libs.API import ZMAPI
+from ..Libs.DB import ZMDB
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 
@@ -70,29 +82,24 @@ class LoggingSettings(LoggingLevelBase):
         path: Path = Path(DEF_CLNT_LOGGING_FILE_PATH)
         filename_prefix: str = DEF_CLNT_LOGGING_FILE_FILENAME_PREFIX
         file_name: Optional[str] = None
-        # fixme: logic for current user
-        user: str = Field(default="www-data")
-        group: str = Field(default="www-data")
+        user: Optional[str] = Field(None)
+        group: Optional[str] = Field(None)
 
         _validate_path = field_validator("path", mode="before")(str2path)
 
     class SanitizeLogging(DefaultNotEnabled):
         replacement_str: str = Field(default="<sanitized>")
 
-    class IntegrateZMLogging(DefaultNotEnabled):
-        debug_level: int = Field(default=4)
-
     level: int = logging.INFO
     console: ConsoleLogging = Field(default_factory=ConsoleLogging)
     syslog: SyslogLogging = Field(default_factory=SyslogLogging)
-    integrate_zm: IntegrateZMLogging = Field(default_factory=IntegrateZMLogging)
     file: FileLogging = Field(default_factory=FileLogging)
     sanitize: SanitizeLogging = Field(default_factory=SanitizeLogging)
 
 
 class ZMDBSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ML_CLIENT_DB_", extra="allow")
-    host: Union[IPvAnyAddress, AnyUrl, None] = Field(None)
+    host: Union[None, AnyStr] = Field(None)
     port: Optional[int] = Field(None)
     user: Optional[str] = Field(None)
     password: Optional[SecretStr] = Field(None)
@@ -109,15 +116,15 @@ class SystemSettings(BaseModel):
 
 
 class ZoneMinderSettings(BaseSettings, extra="allow"):
-    model_config = SettingsConfigDict(env_prefix="ML_CLIENT_ZONEMINDER_")
+    model_config = SettingsConfigDict(env_prefix="ML_CLIENT_ZM_")
 
     class ZMMisc(BaseSettings):
-        model_config = SettingsConfigDict(env_prefix="ML_CLIENT_ZONEMINDER_MISC_")
+        model_config = SettingsConfigDict(env_prefix="ML_CLIENT_ZM_MISC_")
         write_notes: bool = Field(True)
 
     class ZMAPISettings(BaseSettings):
         model_config = SettingsConfigDict(
-            env_prefix="ML_CLIENT_ZONEMINDER_API_", extra="allow"
+            env_prefix="ML_CLIENT_ZM_API_", extra="allow"
         )
         api_url: Optional[AnyUrl] = Field(None)
         user: Optional[SecretStr] = Field(None)
@@ -143,6 +150,7 @@ class ServerRoute(BaseModel):
     # Make 1 attr required so empty entries will fail.
     name: str = Field(...)
     host: AnyUrl = Field(...)
+    port: Optional[Union[int, str]] = Field(5000)
     username: Optional[str] = None
     password: Optional[SecretStr] = None
     timeout: Optional[int] = Field(90, ge=0)
@@ -150,6 +158,12 @@ class ServerRoute(BaseModel):
     _validate_mlapi_host_no_scheme = field_validator("host", mode="before")(
         validate_no_scheme_url
     )
+
+    @model_validator(mode="after")
+    def _validate_model_after(self):
+        if not self.port:
+            self.port = 5000
+        return self
 
 
 class AnimationSettings(BaseModel):
@@ -325,19 +339,19 @@ class APIPullMethod(DefaultNotEnabled):
     snapshot_frame_skip: Optional[int] = Field(3)
     max_frames: Optional[int] = Field(0)
     timeout: Optional[int] = Field(10)
-    _lp: str = Field("", description="logging prefix", repr=False)
+    lp_: str = Field("", description="logging prefix", repr=False)
 
     @model_validator(mode="after")
     def _validate_model_after(self):
-        self._lp = f"{self.__class__.__name__}:"
+        self.lp_ = f"{self.__class__.__name__}:"
         if self.fps and self.sbf:
             logger.warning(
-                f"{self._lp} fps and sbf cannot both be set, sbf takes precedence"
+                f"{self.lp_} fps and sbf cannot both be set, sbf takes precedence"
             )
             self.fps = None
         elif not self.fps and not self.sbf:
             logger.warning(
-                f"{self._lp} fps and sbf are both not set, defaulting to 1 fps"
+                f"{self.lp_} fps and sbf are both not set, defaulting to 1 fps"
             )
             self.fps = 1
         return self
@@ -364,19 +378,19 @@ class ZMSPullMethod(DefaultNotEnabled):
     )
     timeout: Optional[int] = Field(10)
 
-    _lp: str = Field("", description="logging prefix", repr=False)
+    lp_: str = Field("", description="logging prefix", repr=False)
 
     @model_validator(mode="after")
     def _validate_model_after(self):
-        self._lp = f"{self.__class__.__name__}:"
+        self.lp_ = f"{self.__class__.__name__}:"
         if self.fps and self.sbf:
             logger.warning(
-                f"{self._lp} fps and sbf cannot both be set, sbf takes precedence"
+                f"{self.lp_} fps and sbf cannot both be set, sbf takes precedence"
             )
             self.fps = None
         elif not self.fps and not self.sbf:
             logger.warning(
-                f"{self._lp} fps and sbf are both not set, defaulting to 1 fps"
+                f"{self.lp_} fps and sbf are both not set, defaulting to 1 fps"
             )
             self.fps = 1
         return self
@@ -568,6 +582,7 @@ class MonitorsSettings(BaseModel):
     filters: Optional[OverRideMatchFilters] = Field(
         default_factory=OverRideMatchFilters
     )
+    skip_imported_zones: Optional[bool] = Field(False)
     zones: Optional[Dict[str, MonitorZones]] = Field(default_factory=dict)
 
 
@@ -586,7 +601,7 @@ class ConfigFileModel(BaseModel):
     label_groups: Optional[Dict[str, List[str]]] = Field(default_factory=dict)
     detection_settings: DetectionSettings = Field(default_factory=DetectionSettings)
     matching: MatchingSettings = Field(default_factory=MatchingSettings)
-    monitors: Optional[Dict[int, MonitorsSettings]] = Field(default_factory=dict)
+    monitors: Optional[Dict[Union[int, str], Union[MonitorsSettings, bool]]] = Field(default_factory=dict)
 
     _validate_config_path = field_validator("config_path", mode="before")(validate_dir)
 
@@ -614,11 +629,9 @@ class ClientEnvVars(BaseSettings):
 
     db: Optional[ZMDBSettings] = Field(
         default_factory=ZMDBSettings,
-        alias="OOGAH_BOOGAH_WHY_DONT_THEY_MAKE_A_WAY_TO_HAVE_NO_ENV",
     )
     api: Optional[ZoneMinderSettings.ZMAPISettings] = Field(
         default_factory=ZoneMinderSettings.ZMAPISettings,
-        alias="WHY_DONT_THEY_MAKE_A_WAY_TO_HAVE_NO_ENV_OOGAH_BOOGAH",
     )
 
     _validate_client_conf_file = field_validator(
@@ -661,7 +674,11 @@ class DetectionResults(BaseModel, arbitrary_types_allowed=True):
     image: Optional[np.ndarray] = Field(None, repr=False)
     extra_image_data: Optional[Dict[str, Any]] = Field(None, repr=False)
 
-    def get_labels(self) -> List[Optional[str]]:
+    def get_labels(
+        self,
+    ) -> Tuple[
+        List[Optional[str]], List[Optional[float]], List[Optional[List[Optional[int]]]]
+    ]:
         if not self.results or self.results is None:
             return []
         return (
@@ -670,12 +687,10 @@ class DetectionResults(BaseModel, arbitrary_types_allowed=True):
             [r.bounding_box for r in self.results],
         )
 
-class GlobalConfig(BaseModel, arbitrary_types_allowed=True, extra="allow"):
-    from ..Libs.DB import ZMDB
-    from ..Libs.API import ZMAPI
 
-    api: Optional[ZMAPI] = None
-    db: Optional[ZMDB] = None
+class GlobalConfig(BaseModel, arbitrary_types_allowed=True, extra="allow"):
+    api: Union[ZMAPI, None] = None
+    db: Union[ZMDB, None] = None
     mid: Optional[int] = None
     config: Optional[ConfigFileModel] = None
     config_file: Union[str, Path, None] = None

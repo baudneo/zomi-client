@@ -1,3 +1,5 @@
+#!/opt/zomi/client/venv/bin/python3
+
 from __future__ import annotations
 
 import logging.handlers
@@ -108,7 +110,7 @@ def _parse_cli():
 async def main():
     global g, zm_client
     _mode = ""
-    _start = time.perf_counter()
+    _start = time.time()
     # Do all the config stuff and setup logging
     lp = f"eventstart::" if args.event_start else f"eventend::"
     eid = args.eid
@@ -148,7 +150,7 @@ async def main():
     )
     g.config = parse_client_config_file(cfg_file)
     zm_client = zomi_client.main.ZMClient(global_config=g)
-    _end_init = time.perf_counter()
+    _end_init = time.time()
     __event_modes = ["event", ""]
     if _mode in __event_modes:
         # set live or past event
@@ -168,16 +170,16 @@ if __name__ == "__main__":
     logger.debug(f"Starting {filename}...")
     loop = uvloop.new_event_loop()
     asyncio.set_event_loop(loop)
-    _start = time.perf_counter()
+    _start = time.time()
     ENV_VARS = ClientEnvVars()
     logger.debug(f"ENV VARS: {ENV_VARS}")
     g: GlobalConfig = create_global_config()
     g.Environment = ENV_VARS
     detections = loop.run_until_complete(main())
     # Allow 250ms for aiohttp SSL session context to close properly
-    loop.run_until_complete(asyncio.sleep(0.25))
-    logger.debug(f"DETECTIONS FROM uvloop: {detections}")
+    # loop.run_until_complete(asyncio.sleep(0.25))
+    logger.debug(f"DETECTIONS FROM loop: {detections}")
     loop.run_until_complete(zm_client.clean_up())
     if not loop.is_closed():
         loop.close()
-    logger.info(f"perf::FINAL:: Total: {time.perf_counter() - _start:.5f} seconds")
+    logger.info(f"perf::FINAL:: MID={g.mid} Total: {time.time() - _start:.5f} seconds")

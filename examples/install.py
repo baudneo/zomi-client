@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import shutil
 import venv
 import platform
 import subprocess
@@ -20,9 +20,13 @@ _extended_re: Pattern = re.compile(r"(?<!\\)\$\{([A-Za-z0-9_]+)((:?-)([^}]+))?}"
 
 # Change these if you want to install to a different default location
 # You can also specify these locations via CLI
-DEFAULT_DATA_DIR = "/opt/zomi/client/var/lib/zomi"
-DEFAULT_CONFIG_DIR = "/opt/zomi/client/etc/zomi"
-DEFAULT_LOG_DIR = "/opt/zomi/client/var/logs/zomi"
+DEFAULT_DATA_DIR = "/opt/zomi/client"
+DEFAULT_MODEL_DIR = f"{DEFAULT_DATA_DIR}/models"
+DEFAULT_CONFIG_DIR = f"{DEFAULT_DATA_DIR}/conf"
+DEFAULT_LOG_DIR = f"{DEFAULT_DATA_DIR}/logs"
+DEFAULT_TMP_DIR = f"{tempfile.gettempdir()}/zomi/client"
+DEFAULT_IMG_DIR = f"{DEFAULT_DATA_DIR}/images"
+
 DEFAULT_SYSTEM_CREATE_PERMISSIONS = 0o755
 # config files will have their permissions adjusted to this
 DEFAULT_CONFIG_CREATE_PERMISSIONS = 0o755
@@ -44,8 +48,8 @@ console.setFormatter(log_formatter)
 logger.addHandler(console)
 
 # Misc.
-__dependancies__ = "psutil", "requests", "tqdm", "distro"
-__doc__ = """Install ZoMi Machine Learning Client"""
+__dependencies__ = "psutil", "requests", "tqdm", "distro"
+__doc__ = """Install ZoMi Machine Learning Client - Custom"""
 
 # Logic
 tst_msg_wrap = "[testing!!]", "[will not actually execute]"
@@ -103,7 +107,7 @@ def check_imports():
     import importlib
 
     ret = True
-    for imp_name in __dependancies__:
+    for imp_name in __dependencies__:
         try:
             importlib.import_module(imp_name)
         except ImportError:
@@ -160,8 +164,8 @@ def parse_cli():
     global args
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--api-user", help="API user", type=str, default=None, dest="api_user")
-    parser.add_argument("--api-pass", help="API password", type=str, default=None, dest="api_pass")
+    parser.add_argument("--mlapi-user", help="API user", type=str, default=None, dest="api_user")
+    parser.add_argument("--mlapi-pass", help="API password", type=str, default=None, dest="api_pass")
     parser.add_argument(
         "--no-cache-dir",
         action="store_true",
@@ -231,14 +235,14 @@ def parse_cli():
         "--config-only",
         dest="config_only",
         action="store_true",
-        help="Install config files only, used in conjunction with --install-type and --secret-only",
+        help="Install config files only, used in conjunction with --secret-only",
     )
 
     parser.add_argument(
         "--secrets-only",
         dest="secrets_only",
         action="store_true",
-        help="Install secrets file only, used in conjunction with --install-type and --config-only",
+        help="Install secrets file only, used in conjunction with --config-only",
     )
 
     parser.add_argument(
@@ -250,18 +254,10 @@ def parse_cli():
     )
 
     parser.add_argument(
-        "--install-type",
-        choices=["client"],
-        default="client",
-        required=True,
-        dest="install_type",
-        help="Install candidates",
-    )
-    parser.add_argument(
         "--install-log",
         type=str,
-        default=f"./zm-ml_install.log",
-        help="Log file to write installation logs to",
+        default=f"./zomi-client_install.log",
+        help="File to write installation logs to",
     )
     parser.add_argument(
         "--env-file", type=Path, help="Path to .env file (requires python-dotenv)"
@@ -269,7 +265,7 @@ def parse_cli():
     parser.add_argument(
         "--dir-config",
         help=f"Directory where config files are held Default: {DEFAULT_CONFIG_DIR}",
-        default="./zomi/conf",
+        default=DEFAULT_CONFIG_DIR,
         type=Path,
         dest="config_dir",
     )
@@ -277,36 +273,38 @@ def parse_cli():
         "--dir-data",
         help=f"Directory where variable data is held Default: {DEFAULT_DATA_DIR}",
         dest="data_dir",
-        default="./zomi/data",
+        default=DEFAULT_DATA_DIR,
         type=Path,
     )
     parser.add_argument(
         "--dir-model",
         type=str,
         help="ML model base directory",
-        default="",
+        default=DEFAULT_MODEL_DIR,
         dest="model_dir",
+    )
+    parser.add_argument(
+        "--dir-image",
+        "--dir-images",
+        type=str,
+        help="Directory where images are stored",
+        default=DEFAULT_IMG_DIR,
+        dest="image_dir",
     )
     parser.add_argument(
         "--dir-temp",
         "--dir-tmp",
         type=Path,
         help="Temp files directory",
-        default=f"{tempfile.gettempdir()}/zomi",
+        default=DEFAULT_TMP_DIR,
         dest="tmp_dir",
     )
     parser.add_argument(
         "--dir-log",
         help=f"Directory where logs will be stored Default: {DEFAULT_LOG_DIR}",
-        default="./zomi/log",
+        default=DEFAULT_LOG_DIR,
         dest="log_dir",
         type=Path,
-    )
-    parser.add_argument(
-        "--force-install-secrets",
-        action="store_true",
-        dest="install_secrets",
-        help="install default secrets.yml [will use a numbered backup system]",
     )
     parser.add_argument(
         "--user",
@@ -509,16 +507,16 @@ def install_dirs(
         else:
             test_msg(f"Creating {dir_type} directory...")
             create_dir(dest_dir, ml_user, ml_group, perms)
-        # create sub-folders
-        if sub_dirs:
-            test_msg(
-                f"Creating {dir_type} sub-folders: {', '.join(sub_dirs).lstrip(',')}"
-            )
-            for _sub in sub_dirs:
-                _path = dest_dir / _sub
-                create_dir(_path, ml_user, ml_group, perms)
     else:
         logger.warning(f"{dir_type} directory {dest_dir} already exists!")
+    # create sub-folders
+    if sub_dirs:
+        test_msg(
+            f"Creating {dir_type} sub-folders: {', '.join(sub_dirs).lstrip(',')}"
+        )
+        for _sub in sub_dirs:
+            _path = dest_dir / _sub
+            create_dir(_path, ml_user, ml_group, perms)
 
 
 def download_file(url: str, dest: Path, user: str, group: str, mode: int):
@@ -528,6 +526,7 @@ def download_file(url: str, dest: Path, user: str, group: str, mode: int):
         else f"TESTING if file exists at :: {url}..."
     )
     logger.info(_mess_)
+
     import requests
     from tqdm.auto import tqdm
     import shutil
@@ -862,8 +861,8 @@ def main():
         ],
     )
     install_dirs(
-        Path(DEFAULT_DATA_DIR + "/face_data"),
-        DEFAULT_DATA_DIR + "/face_data",
+        Path(f"{DEFAULT_DATA_DIR}/face_data"),
+        f"{DEFAULT_DATA_DIR}/face_data",
         "Face Data",
         sub_dirs=["known", "unknown"],
         perms=0o777,
@@ -873,13 +872,11 @@ def main():
     )
     install_dirs(log_dir, DEFAULT_LOG_DIR, "Log", sub_dirs=[], perms=0o777)
 
-    do_install("secrets")
-    do_install("client")
+    check_backup("secrets")
+    do_install()
 
 
-def do_install(_inst_type: str):
-    global _ENV
-
+def check_backup(_inst_type: str) -> None:
     files: List[Optional[Path]] = [x for x in cfg_dir.rglob(f"{_inst_type}.*")]
     if files:
         files = sorted(files, reverse=True)
@@ -909,7 +906,6 @@ def do_install(_inst_type: str):
             # Backup existing
             copy_file(_target, file_backup, ml_user, ml_group, cfg_create_mode)
             # install new
-            # change target to f"{_inst_type}.yml"
             copy_file(
                 REPO_BASE / f"configs/example_{_inst_type}.yml",
                 cfg_dir / f"{_inst_type}.yml",
@@ -917,11 +913,12 @@ def do_install(_inst_type: str):
                 ml_group,
                 cfg_create_mode,
             )
-
     else:
         logger.debug(f"No existing {_inst_type} config files found!")
         if cfg_dir.is_dir() or testing:
-            test_msg(f"Creating {_inst_type} config file from example template...", "info")
+            test_msg(
+                f"Creating {_inst_type} config file from example template...", "info"
+            )
             copy_file(
                 REPO_BASE / f"configs/example_{_inst_type}.yml",
                 cfg_dir / f"{_inst_type}.yml",
@@ -934,113 +931,104 @@ def do_install(_inst_type: str):
                 f"Config directory '{cfg_dir}' does not exist, skipping creation of {_inst_type} config file..."
             )
 
-    _pip_prefix: List[str] = [
-        # "python3",  # The venv builder will prepend the venv python executable
+
+def do_install():
+    global _ENV
+
+    _inst_type: str = "client"
+    check_backup("client")
+
+    _cmd_array: List[str] = [
         "-m",
         "pip",
         "install",
-        # "--root-user-action=ignore",
-        # "--report",
-        # "./pip_install_report.json",
     ]
 
     if args.no_cache:
         logger.info("Disabling pip cache...")
-        _pip_prefix.append("--no-cache-dir")
-    if args.pip_install_editable:
+        _cmd_array.append("--no-cache-dir")
+    if editable:
         logger.info(
             "Installing in pip --editable mode, DO NOT remove the source git"
             " directory after install! git pull will update the installed package"
         )
-        _pip_prefix.append("--editable")
+        _cmd_array.append("--editable")
 
-    if _inst_type == "client":
-        install_host_dependencies(_inst_type)
-        logger.info(f"Installing '{_inst_type}' specific files...")
-        copy_file(
-            EXAMPLES_DIR / "EventStartCommand.sh",
-            data_dir / "bin/EventStartCommand.sh",
-            ml_user,
-            ml_group,
-            cfg_create_mode,
-        )
+    install_host_dependencies(_inst_type)
 
-        copy_file(
-            EXAMPLES_DIR / "eventproc.py",
-            data_dir / "bin/eventproc.py",
-            ml_user,
-            ml_group,
-            cfg_create_mode,
-        )
+    copy_file(
+        EXAMPLES_DIR / "EventStartCommand.sh",
+        data_dir / "bin/EventStartCommand.sh",
+        ml_user,
+        ml_group,
+        cfg_create_mode,
+    )
 
-        # create a symbolic link to both files in /usr/local/bin
-        # so that they can be called from anywhere
-        test_msg(
-            f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zomi_ESC "
-            f"(shell helper) zomi_eventproc (python script)",
-            "info",
-        )
+    copy_file(
+        EXAMPLES_DIR / "eventproc.py",
+        data_dir / "bin/eventproc.py",
+        ml_user,
+        ml_group,
+        cfg_create_mode,
+    )
 
-        if not testing:
-            # Make sure it does not exist first, it will error if file exists
-            _dest_esc = Path("/usr/local/bin/zomi_ESC")
-            _dest_ep = Path("/usr/local/bin/zomi_eventproc")
-            # if it exists log a message that it is being unlinked then symlinked again with specified user
+    # create a symbolic link to both files in /usr/local/bin
+    # so that they can be called from anywhere
+    test_msg(
+        f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zomi-ESC "
+        f"(shell helper) zomi-eventproc (python script)",
+        "info",
+    )
+    if not testing:
+        # Make sure it does not exist first, it will error if file exists
+        _dest_esc = Path("/usr/local/bin/zomi-ESC")
+        _dest_ep = Path("/usr/local/bin/zomi-eventproc")
+        # if it exists log a message that it is being unlinked then symlinked again with specified user
 
-            if _dest_esc.exists():
-                logger.warning(
-                    f"{_dest_esc} already exists, unlinking and sym-linking again..."
-                )
-                _dest_esc.unlink()
-            _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
-            if _dest_ep.exists():
-                logger.warning(
-                    f"{_dest_ep} already exists, unlinking and sym-linking again..."
-                )
-                _dest_ep.unlink()
-            _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
-
-        if "ML_INSTALL_CLIENT_ROUTE_NAME" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_NAME"] = "DEFAULT FROM INSTALL <CHANGE ME!!!>"
-        if "ML_INSTALL_CLIENT_ROUTE_HOST" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_HOST"] = "127.0.0.1"
-        if "ML_INSTALL_CLIENT_ROUTE_PORT" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_PORT"] = "5000"
-        if "ML_INSTALL_CLIENT_ROUTE_USER" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_USER"] = "imoz"
-        if "ML_INSTALL_CLIENT_ROUTE_PASS" not in _ENV:
-            _ENV["ML_INSTALL_CLIENT_ROUTE_PASS"] = "zomi"
-
-        _src: str = (
-            f"{REPO_BASE.expanduser().resolve().as_posix()}"
-        )
-
-        create_("secrets", cfg_dir / "secrets.yml")
-        create_(_inst_type, cfg_dir / f"{_inst_type}.yml")
-
-        if testing:
-            _pip_prefix.append("--dry-run")
-        _pip_prefix.append(_src)
-        _venv = ZoMiEnvBuilder(
-            with_pip=True, cmd=_pip_prefix, upgrade_deps=True, prompt="ZoMi_Client"
-        )
-        _venv.create(venv_dir)
-
-        if _inst_type == "client":
-            _f: Optional[Path] = None
-            content: Optional[str] = None
-            _f: Path = data_dir / "bin/eventproc.py"
-            if not _f.is_absolute():
-                _f = _f.expanduser().resolve()
-            # if testing:
-            #     _f = (INSTALL_FILE_DIR / "eventproc.py")
-            test_msg(
-                f"Modifying {_f.as_posix()} to use VENV {_venv.context.env_exec_cmd} shebang"
+        if _dest_esc.exists():
+            logger.warning(
+                f"{_dest_esc} already exists, unlinking and sym-linking again..."
             )
-            content = _f.read_text()
-            with _f.open("w+") as f:
-                f.write(f"#!{_venv.context.env_exec_cmd}\n{content}")
-            del content
+            _dest_esc.unlink()
+        _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
+        if _dest_ep.exists():
+            logger.warning(
+                f"{_dest_ep} already exists, unlinking and sym-linking again..."
+            )
+            _dest_ep.unlink()
+        _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
+
+    _src: str = (
+        f"{REPO_BASE.expanduser().resolve().as_posix()}"
+    )
+
+    create_("secrets", cfg_dir / "secrets.yml")
+    create_(_inst_type, cfg_dir / f"{_inst_type}.yml")
+
+    if testing and not editable:
+        _cmd_array.append("--dry-run")
+    _cmd_array.append(_src)
+
+    _venv = ZoMiEnvBuilder(
+        with_pip=True, cmd=_cmd_array, upgrade_deps=True, prompt="ZoMi_Client"
+    )
+    try:
+        _venv.create(venv_dir)
+    except FileNotFoundError as e:
+        logger.warning(f"Issue while creating VENV: {e}")
+
+    _f: Path = data_dir / "bin/eventproc.py"
+    test_msg(
+        f"Modifying {_f.as_posix()} to use VENV {_venv.context.env_exec_cmd} shebang"
+    )
+    if not testing:
+        content: Optional[str] = None
+        if not _f.is_absolute():
+            _f = _f.expanduser().resolve()
+        content = _f.read_text()
+        with _f.open("w+") as f:
+            f.write(f"#!{_venv.context.env_exec_cmd}\n{content}")
+        del content
 
 
 class Envsubst:
@@ -1159,9 +1147,9 @@ def in_venv():
 
 class ZoMiEnvBuilder(venv.EnvBuilder):
     """
-    Venv builder for ZoMi ML
+    Venv builder for ZoMi Client.
 
-    :param cmd: The pip command as an array to install ZoMi Client.
+    :param cmd: The pip command as an array.
     """
 
     install_cmd: List[str]
@@ -1198,12 +1186,19 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
                         being processed.
         """
 
-        # set python executable to venv executable
         self.install_cmd.insert(0, context.env_exec_cmd)
         logger.debug(
             f"venv builder:DBG>>> About to run install command: '{self.install_cmd}'"
         )
+        remove_after = False
+        if testing and editable:
+            logger.info(f"***************************\n\n--editable and --dry-run/-T/--testing cannot be used "
+                        f"together, the local --editable copy will be installed and then removed to accomplish "
+                        f"the same thing. Resuming in 5 seconds...\n\n")
+            time.sleep(5)
 
+            remove_after = True
+        ran: Optional[subprocess.Popen] = None
         try:
             ran = subprocess.Popen(self.install_cmd, stdout=subprocess.PIPE)
 
@@ -1216,7 +1211,7 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
                 logger.info(e.stdout)
             raise e
         else:
-            if ran:
+            if ran is not None:
                 msg = ""
                 for c in iter(lambda: ran.stdout.read(1), b""):
                     sys.stdout.buffer.write(c)
@@ -1231,6 +1226,17 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
                             msg = ""
                         else:
                             msg += c
+        finally:
+            if (remove_after and ran is not None) and Path(context.env_dir).exists():
+                logger.info(f"Removing local --editable copy...")
+                try:
+                    shutil.rmtree(context.env_dir, ignore_errors=True)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to remove local --editable copy at {context.env_dir} -> {e}"
+                    )
+                else:
+                    logger.info(f"Local --editable copy removed successfully")
 
 
 def check_python_version(maj: int, min: int):
@@ -1250,7 +1256,7 @@ if __name__ == "__main__":
     # parse args first
     args = parse_cli()
 
-    logger.info(f"Starting install script...")
+    logger.info(f"Starting zomi-client install script...")
     if not check_imports():
         logger.critical(f"Missing python dependencies, exiting...")
         sys.exit(1)
@@ -1277,16 +1283,15 @@ if __name__ == "__main__":
     logger.removeHandler(console)
     logger.addHandler(tqdm_handler)
     testing: bool = args.test
+    editable: bool = args.pip_install_editable
     debug: bool = args.debug
-    # Let's create a venv for the installation script to run in
+    install_log = args.install_log
     if in_venv():
         logger.info(
             "Detected to be running in a virtual environment, "
             "be aware this install script creates "
             "a venv for zomi to run in!"
         )
-
-    install_log = args.install_log
     file_handler = logging.FileHandler(install_log, mode="w")
     file_handler.setFormatter(log_formatter)
     logger.addHandler(file_handler)
@@ -1304,18 +1309,20 @@ if __name__ == "__main__":
     data_dir: Path = args.data_dir
     cfg_dir: Path = args.config_dir
     log_dir: Path = args.log_dir
+    model_dir: Path = args.model_dir
+    image_dir: Path = args.image_dir
     tmp_dir: Path = args.tmp_dir
     venv_dir: Path = data_dir / "venv"
     zm_user = args.zm_user
     zm_pass = args.zm_pass
-    api_user = args.api_user
-    api_pass = args.api_pass
+    mlapi_user = args.api_user
+    mlapi_pass = args.api_pass
     zm_portal = args.zm_portal
     zm_api = args.zm_api
     if zm_portal and not zm_api:
         args.zm_api = zm_api = f"{zm_portal}/api"
         logger.info(
-            f"ZM_PORTAL specified, but not ZM_API, appending '/api' to ZM_PORTAL -> {zm_api}"
+            f"--zm-portal specified, but not --zm-api. Appending '/api' -> {zm_api}"
         )
     route_name = args.route_name
     route_host = args.route_host
@@ -1345,23 +1352,25 @@ if __name__ == "__main__":
         "ML_INSTALL_LOGGING_LEVEL": "debug",
         "ML_INSTALL_LOGGING_CONSOLE_ENABLED": "yes",
         "ML_INSTALL_LOGGING_FILE_ENABLED": "no",
+        "ML_INSTALL_MODEL_DIR": model_dir if model_dir else (data_dir / "models").as_posix(),
         "ML_INSTALL_LOGGING_SYSLOG_ENABLED": "no",
         "ML_INSTALL_LOGGING_SYSLOG_ADDRESS": "/dev/log",
-        "ML_INSTALL_TMP_DIR": tmp_dir.as_posix() if tmp_dir else None,
-        "ML_INSTALL_IMAGE_DIR": (data_dir / "images").as_posix(),
+        "ML_INSTALL_TMP_DIR": tmp_dir.as_posix() if tmp_dir else f"{tempfile.gettempdir()}/zomi/client",
+        "ML_INSTALL_IMAGE_DIR": image_dir if image_dir else (data_dir / "images").as_posix(),
         "ML_INSTALL_CLIENT_ZM_API": zm_api,
         "ML_INSTALL_CLIENT_ZM_USER": zm_user,
         "ML_INSTALL_CLIENT_ZM_PASS": zm_pass,
         "ML_INSTALL_CLIENT_ZM_PORTAL": zm_portal,
-        "ML_INSTALL_CLIENT_ROUTE_USER": api_user,
-        "ML_INSTALL_CLIENT_ROUTE_PASS": api_pass,
-        "ML_INSTALL_CLIENT_ROUTE_NAME": route_name,
-        "ML_INSTALL_CLIENT_ROUTE_HOST": route_host,
-        "ML_INSTALL_CLIENT_ROUTE_PORT": route_port,
+        "ML_INSTALL_CLIENT_ROUTE_USER": mlapi_user or "imoz",
+        "ML_INSTALL_CLIENT_ROUTE_PASS": mlapi_pass or "zomi",
+        "ML_INSTALL_CLIENT_ROUTE_NAME": route_name or "DEFAULT FROM INSTALL <CHANGE ME!!!>",
+        "ML_INSTALL_CLIENT_ROUTE_HOST": route_host or "127.0.0.1",
+        "ML_INSTALL_CLIENT_ROUTE_PORT": route_port or 5000,
     }
 
     if args.env_file:
         parse_env_file(args.env_file)
+
     if args.config_only or args.secrets_only:
         secrets = False
         _cfg = False

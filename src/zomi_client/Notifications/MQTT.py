@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import logging
 import ssl
-from time import perf_counter
-from typing import Union, Optional, TYPE_CHECKING, Any, Dict
+import time
+from typing import Union, Optional, Any, Dict
 
 import numpy as np
 import paho.mqtt.client as paho_client
 
 from ..Log import CLIENT_LOGGER_NAME
-from ..Models.config import MLNotificationSettings
+from ..Models.config import MLNotificationSettings, GlobalConfig
 from ..Notifications import CoolDownBase
 from ..main import get_global_config
 
-if TYPE_CHECKING:
-    from ..Models.config import GlobalConfig
 
 g: Optional[GlobalConfig] = None
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
@@ -244,15 +242,15 @@ class MQTT(CoolDownBase):
         logger.debug(
             f"{LP}connect: connecting to broker (timeout: {self.conn_timeout})"
         )
-        start = perf_counter()
+        start = time.time()
         while not self._connected:
-            if (perf_counter() - start) >= self.conn_timeout:
+            if (time.time() - start) >= self.conn_timeout:
                 logger.error(
                     f"{LP}connect: broker: '{self.config.broker if not self.sanitize else self.sanitize_str}' did not reply within '{self.conn_timeout}' seconds"
                 )
                 return
         else:
-            self.conn_time = perf_counter()
+            self.conn_time = time.time()
 
     def send(self, *args, **kwargs):
         self.publish(*args, **kwargs)
@@ -350,7 +348,7 @@ class MQTT(CoolDownBase):
             return
         try:
             if self.conn_time:
-                self.conn_time = perf_counter() - self.conn_time
+                self.conn_time = time.time() - self.conn_time
             logger.debug(
                 f"{LP}close: {self.client_id} ->  disconnecting from mqtt broker: "
                 f"'{self.config.broker if not self.sanitize else self.sanitize_str}:{self.config.port}'"

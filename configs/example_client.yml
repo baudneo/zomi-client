@@ -16,13 +16,6 @@ substitutions:
   # - ZoMi will make its own venv, this will keep its env separate from system
   VENV_DIR: ${ML_INSTALL_VENV_DIR}
 
-  ROUTE_NAME: ${ML_INSTALL_CLIENT_ROUTE_NAME}
-  ROUTE_HOST: ${ML_INSTALL_CLIENT_ROUTE_HOST}
-  # - Make sure to quote the port number to force it to be a string
-  # - leaving the number unquoted will raise a validation error
-  ROUTE_PORT: "${ML_INSTALL_CLIENT_ROUTE_PORT}"
-  ROUTE_USER: ${ML_INSTALL_CLIENT_ROUTE_USER}
-  ROUTE_PASS: ${ML_INSTALL_CLIENT_ROUTE_PASS}
 
   # - This file contains substitutions that will be imported into this file (secrets)
   # - NOTE: The 'IncludeFile' directive must be contained in the 'substitutions' section
@@ -133,6 +126,8 @@ mlapi:
   name: ${ROUTE_NAME}
   host: ${ROUTE_HOST}  # IP or hostname (add https:// if TLS encrypted)
   port: ${ROUTE_PORT}
+  username: ${ROUTE_USER}
+  password: ${ROUTE_PASS}
   timeout: 60  # Default: 90
 
 
@@ -453,8 +448,8 @@ detection_settings:
   models:
     # - Models to run on all monitors
     # - NOTE: You can override these settings per monitor in monitors: section
-    yolov4 tiny:
-    yolov7 tiny:
+    yolo-nas-l trt:
+    yolov8x trt:
 
   # - Detect color of most dominant object by cropping its bounding box and finding top_n dominant colors
   detect_color:
@@ -468,7 +463,7 @@ detection_settings:
       - vehicles
 
   # - Import zones that have been defined in ZM Web GUI
-  import_zones: no
+  import_zones: yes
 
   # - object must be in one of the zones that triggered the motion event
   # - 1 pixel inside the zone is enough to trigger this.
@@ -478,15 +473,28 @@ detection_settings:
   images:
     # - How to grab images from ZM
     pull_method:
-      # - Precedence: 1. zms 2. shm 3. api 4. zmu
 
-      # - SHM IS WIP, it will raise not implemented error
-      # - SHM scans shared memory for the image buffer, this may be the fastest method
-      shm: no
-
-      # - API works but is slower.
-      api:
+      # - ZMS is the CGI app that comes with ZM. It is the fastest way to grab images from ZM.
+      zms:
         enabled: yes
+        # - Timeout in seconds for image grab request
+        timeout: 15
+
+        # - The complete URL to zms cgi script (i.e.: https://zm.example.com/zm/cgi-bin/nph-zms)
+        # - If not supplied it tries to use the portal_url, api_url and ZMS_CGI_PATH to construct it
+        #url:
+
+        # - Seconds Between frames
+        sbf: 1
+
+        # - ANY of the delay options can be set as xx or xx.yy (int/float)
+        attempts: 3  # attempts to grab the requested frame
+        delay: 1.2   # delay between failed attempts
+        max_frames: 10  # Only grab a maximum of x frames (Default: Calculated based on event duration and monitor capturing FPS)
+
+      # - API is slower than ZMS.
+      api:
+        enabled: no
         # Timeout in seconds for image grab request
         timeout: 15
         # - How many frames per second should be grabbed to run Object Detection on (Default: 1)
@@ -510,36 +518,11 @@ detection_settings:
         # Snapshot FID = to the frame ID that has the highest alarm score in the event (thus far)
         snapshot_frame_skip: 3
 
-
-      # - ZMU IS WIP, it will raise not implemented error
-      # - ZMU is a binary that comes with ZM
-      zmu: no
-
-      # - ZMS is the CGI app that comes with ZM. This may end up being the default method.
-      zms:
-        enabled: no
-        # - Timeout in seconds for image grab request
-        timeout: 15
-
-        # - The complete URL to zms cgi script (i.e.: https://zm.example.com/zm/cgi-bin/nph-zms)
-        # - If not supplied it tries to use the portal_url and api_url to construct it
-        #url:
-
-        # How many frames per second should be grabbed to run Object Detection on (Default: 1)
-        fps: 1
-        # - If you have a camera capturing 1 frame every <x> seconds, use sbf instead of fps
-        # - Seconds Between frames, only fps or sbf can be used, not both. sbf takes precedence over fps.
-        #sbf: 1
-
-        # - ANY of the delay options can be set as xx or xx.yy (int/float)
-        attempts: 3  # attempts to grab the requested frame
-        delay: 1.2   # delay between failed attempts
-        max_frames: 10  # Only grab a maximum of x frames (Default: Calculated based on event duration and monitor capturing FPS)
-
     # - Save debug images to disk (Every frame grabbed from the source)
     # - BE AWARE, if you leave this on and forget, it will eat up disk space
     debug:
       # - Shows bounding box of filtered out detections in RED
+      # - Everything that didnt make it past filters will be drawn in red
       enabled: no
       # - Where to save the debug images Default: <images_dir>/debug
       path: ${IMAGE_DIR}/debug
@@ -553,16 +536,16 @@ detection_settings:
         enabled: no
         # - Print the name of the zone to identify it (this is best try depending on zone size)
         show_name: no
-        # - Color of the zone polygon
+        # - Color of the zone polygon (B, G, R)
         color: (255, 255, 255)
         # - Thickness of the zone polygon line
         thickness: 2
 
       # - Show which model detected the object
       model:
-        enabled: yes
+        enabled: no
         # - Show which processor the model used
-        processor: yes
+        processor: no
 
       # - Show the confidence level of the detection
       confidence: yes
@@ -572,28 +555,24 @@ detection_settings:
       # - 1 image has bounding boxes around the detected objects with info in the JSON file
       # - The other image is the unmodified original image (useful for testing or negative training)
       enabled: no
-      path: ${TMP_DIR}zomi/training_images
+      path: ${IMAGE_DIR}/training_images
 
 
 matching:
-  # - Same as zmeventnotification for now - first, most, most_unique, union[WIP]
+  # - Can use: first, most, most_unique, union[WIP]
   # - Tiebreakers will use the SUM of confidences for the model
   # - The strategy is in relation to the 'event' its processing and is only defined on a global level.
   # -- first: break out of the detection loop on the very first filtered detection
   # -- most: Find the best match after processing the event
   strategy: first
 
-  # - If using more than 2 Object type Models (yolov4, tiny-yolov7), try to confirm matches by checking
-  # -  if the object is in roughly the same place across Models.
-  # -> NOT IMPLEMENTED <--
-  object_confirm: yes
-
   # - Remove matches that seem to be 'in the same place'.
   # - Comparison is between the previous detections best
   # - match and ongoing detected objects.
   static_objects:
     enabled: no
-    # - The max difference in the center of the objects bounding box between previous and current detection
+    # - The max difference in the center of the objects bounding box between previous and current detection.
+    # - If the difference is lower than this value, it will be considered a static object.
     # - expressed as a percentage (0.0 - 1.0 OR 13.6%)
     max_diff: 8%
 
@@ -602,8 +581,8 @@ matching:
       # - The label of the object to check for (label_groups supported)
       - vehicles
 
-  # - This is globally applied to all monitors but can be overridden on a per-monitor basis (in monitors: section)
-  # - Filtering is done on the results returned by ZoMi API (if any).
+  # - This is globally applied to all monitors but can be overridden on a per monitor/zone basis (in monitors: section)
+  # - Filtering is done on the results returned by the ML server (if any).
   filters:
     # - There are 3 types of model filters: object, face, alpr
     # - The type_of the model is set in the server config file
@@ -626,13 +605,18 @@ matching:
       min_conf: 0.456
 
 monitors:
-# - Override settings based on which monitor an event was triggered by
-# - This is where most of the powerful stuff happens. Filtering to get the results you want to be notified about.
-# - You can override almost all settings on a per monitor basis.
-  999999999901:  # Monitor ID
+  # - Add a default ML zone for each monitor ID if no zones defined or imported
+  # - This will create a zone to look for objects in the entire image
+  # - ONLY if NO zones are defined/imported for that monitor OR the zone is defined and set to enable: no
+  create_default_full_image_zone: yes
+
+  # - Override settings based on which monitor an event was triggered by
+  # - This is where most of the powerful stuff happens. Filtering to get the results you want to be notified about.
+  # - You can override almost all settings on a per-monitor basis and even finer grained per zone.
+  999999999901:  # Monitor ID from ZM
     # - Override global models for this monitor
+    # - These model names are defined in the zomi server config
     models:
-      # - Models to run. Name must match the name of the model obtained from its configuration from the ZoMi ML server (MLAPI)
       # - names are lower cased but, spaces are preserved
       yolov4:
         enabled: yes  # Default and implied. Can be omitted.
@@ -648,6 +632,7 @@ monitors:
       enabled: no
       # - Difference in area between current and previous detection
       difference: 68%
+      # - Only apply to these labels (label_groups supported)
       labels:
         - car
       #ignore_labels:
@@ -661,11 +646,11 @@ monitors:
         labels:
           person:
             min_conf: 0.5
-            # - The minimum and maximum area of the detection box in pixels or percentage of the zone.
+            # - The minimum and maximum area of the detection box in pixels or percentage of the ZONE.
             # - (how much of the zone is covered by the detection box)
             #min_area: 10px
             #max_area: 10%
-            # - The minimum and maximum area of the detection box in pixels or percentage of the full image.
+            # - The minimum and maximum area of the detection box in pixels or percentage of the FULL IMAGE.
             # - (how much of the image is covered by the detection box)
             #total_min_area: 10px
             #total_max_area: 10%
@@ -674,11 +659,16 @@ monitors:
         # - You can specify trained face names here, only pattern supported currently
         pattern: ".*"
         #pattern: "(James|Addison)"
-        # - Confidence will always be 0% or 100%, match or no match
+        # - Confidence will always be 0% or 100%, match or no match for recognition
       alpr:
         # - Only pattern and min_conf supported
         pattern: ".*"
         min_conf: 0.1
+
+    # - If you have imported ZM zones but dont want them imported to this specific monitor
+    # - set this to yes
+    skip_imported_zones: no
+
     zones:
     # - These are zones that are defined in the config file on top of imported ZoneMinder zones
     # - If you import ZM zones you can add a ML config for that zone here.
@@ -739,54 +729,3 @@ monitors:
               # - Only pattern and min_conf supported
               pattern: ".*"
               min_conf: 0.1
-
-  999999999902:
-    models:
-      # - Models to run. Name must match the name of the model obtained from its configuration or the API request
-      yolov4:
-      yolov4-p6:
-      yolov7 tiny:
-      yolov7:
-      yolov7x:
-      static_objects:
-        enabled: yes
-        # - difference in area between current and previous detection
-        difference: 69%
-        labels:
-          - car
-        #ignore_labels:
-          #- bird
-
-    zones:
-      parking area:
-        enabled: yes
-        # - Polygon points. Use ZM zone editor to draw the polygon and copy the points here
-        points: 0,722 1592,94 1920,380 1920,1073 0,1080
-        resolution: 1080p
-        # - These filters are in relation to the zone. They will override the global and monitor filters
-        filters:
-          object:
-            # - You can define your own regex filter here. 'ZONE_LEVEL_2' is just for emphasis and documentation
-            pattern: "(ZONE_LEVEL_2|person|dog|cat|car|truck|bus|bicycle)"
-            
-            # - Per label filtering (label_groups supported)
-            # - Trained faces are labeled with the name of the person
-            labels:
-              person:
-                min_conf: 0.5
-                # - The minimum and maximum area of the detection box in pixels or percentage of the zone.
-                # - (how much of the zone is covered by the detection box)
-                min_area: 10px
-#                max_area: 10%
-                # - The minimum and maximum area of the detection box in pixels or percentage of the full image.
-                # - (how much of the image is covered by the detection box)
-                total_min_area: 10px
-                #total_max_area: 10%
-          face:
-            # - You can specify trained face names here, only pattern supported currently
-            pattern: "(TEST_MON2_FACE|.*)"
-            #pattern: "(James|Addison)"
-          alpr:
-            # - Only pattern and min_conf supported
-            pattern: "(TEST_MON2_ALPR|.*)"
-            min_conf: 0.1

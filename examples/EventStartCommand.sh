@@ -16,9 +16,9 @@ if [[ -n "$2" ]]; then
   else
     MID=""
 fi
-
-config="${ML_CLIENT_CONF_FILE:-/opt/zomi/client/conf/client.yml}"
-detect_script="${ML_CLIENT_EVENT_START:-$(which zomi_eventproc)}"
+echo "ML_CLIENT_CONF_FILE: ${ML_CLIENT_CONF_FILE}"
+config="${ML_CLIENT_CONF_FILE:-/opt/zomi/src/client/configs/client.yml}"
+detect_script="${ML_CLIENT_EVENT_START:-$(which zomi-eventproc)}"
 
 event_start_command=(
 #  python3
@@ -30,6 +30,8 @@ event_start_command=(
   "${EID}"
   "${MID}"
 )
+
+echo "Running command: ${event_start_command[*]}"
 
 eval "${event_start_command[@]}"
 exit 0
