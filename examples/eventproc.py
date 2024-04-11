@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from zomi_client.main import ZMClient
 
 __doc__ = """
-An example that uses ZM's EventStartCommand/EventEndCommand mechanism to run 
-object detection on a ZM event using ZoMi ML library.
+A script that uses ZoneMinders EventStartCommand/EventEndCommand mechanism to run 
+object detection on an event.
 """
 # Setup basic console logging (hook into library logging)
 logger: logging.Logger = create_logs()
@@ -54,14 +54,6 @@ def _parse_cli():
         help="This is the end of an event",
         action="store_false",
         dest="event_start",
-    )
-    parser.add_argument(
-        "--shm-mode",
-        "--shm",
-        "-S",
-        action="store_true",
-        dest="shm",
-        help="Run in shared memory mode (Pulling images directly from SHM)",
     )
 
     parser.add_argument("--config", "-C", help="Config file to use", type=Path)
@@ -117,13 +109,7 @@ async def main():
     mid = args.mid
     event_start = args.event_start
     cfg_file: Optional[Path] = None
-    if args.shm:
-        _mode = "shm"
-        logger.debug(f"{lp} Running in shared memory mode (Monitor ID REQUIRED)")
-        if mid == 0:
-            logger.error(f"{lp} Monitor ID is required for shared memory mode")
-            sys.exit(1)
-    elif args.event:
+    if args.event:
         _mode = "event"
         logger.debug(f"{lp} Running in event mode")
         if eid == 0:
@@ -156,9 +142,6 @@ async def main():
         # set live or past event
         zm_client.is_live_event(args.live)
         return await zm_client.detect(eid=eid, mid=g.mid)
-    elif _mode == "shm":
-        raise NotImplementedError("SHM mode is a work in progress")
-        # return await zm_client.detect(mid=mid)
     else:
         raise ValueError(f"Unknown mode: {_mode}")
 
@@ -175,7 +158,14 @@ if __name__ == "__main__":
     logger.debug(f"ENV VARS: {ENV_VARS}")
     g: GlobalConfig = create_global_config()
     g.Environment = ENV_VARS
-    detections = loop.run_until_complete(main())
+    try:
+        detections = loop.run_until_complete(main())
+    except Exception as e:
+        logger.error(f"eventproc: Error in main(): {e}", exc_info=True)
+        from zomi_client import Log
+        for handler in logger.handlers:
+            if isinstance(handler, Log.BufferedLogHandler):
+                handler.flush()
     # Allow 250ms for aiohttp SSL session context to close properly
     # loop.run_until_complete(asyncio.sleep(0.25))
     logger.debug(f"DETECTIONS FROM loop: {detections}")

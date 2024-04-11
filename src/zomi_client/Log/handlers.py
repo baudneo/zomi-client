@@ -13,25 +13,34 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
 
     def flush(self, *args, **kwargs):
         """
-        Override flush to do nothing unless a file_handler kwarg is supplied
+        Override flush to do nothing unless a file_handler kwarg is supplied.
+
+        UPDATE: need to flush to stdout
 
 
          """
         # only flush if a file_handler is set
         file_handler: Optional[logging.FileHandler] = kwargs.get("file_handler")
-        if len(self.buffer) > 0 and file_handler is not None and isinstance(file_handler, logging.FileHandler):
-            self.acquire()
-            # flush buffer to file handler
-            try:
+        if len(self.buffer) > 0:
+            if file_handler is not None and isinstance(file_handler, logging.FileHandler):
+                self.acquire()
+                # flush buffer to file handler
+                try:
+                    for record in self.buffer:
+                        fh_record = file_handler.format(record)
+                        file_handler.acquire()
+                        try:
+                            file_handler.stream.write(fh_record)
+                            file_handler.stream.write(file_handler.terminator)
+                            file_handler.flush()
+                        finally:
+                            file_handler.release()
+                    self.buffer.clear()
+                finally:
+                    self.release()
+            elif file_handler is None:
+                # flush to stdout
                 for record in self.buffer:
-                    record = file_handler.format(record)
-                    file_handler.acquire()
-                    try:
-                        file_handler.stream.write(record)
-                        file_handler.stream.write(file_handler.terminator)
-                        file_handler.flush()
-                    finally:
-                        file_handler.release()
+                    print(record.getMessage())
                 self.buffer.clear()
-            finally:
-                self.release()
+

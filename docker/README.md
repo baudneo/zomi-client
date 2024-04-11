@@ -1,0 +1,1 @@
+The plan is to use `zoneminder-containers` as a base image and install the client in the container.

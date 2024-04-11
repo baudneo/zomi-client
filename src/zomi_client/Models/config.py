@@ -12,7 +12,6 @@ from typing import (
     Any,
     Optional,
     AnyStr,
-    TYPE_CHECKING, Annotated,
 )
 
 import numpy as np
@@ -21,7 +20,6 @@ from pydantic import (
     Field,
     AnyUrl,
     field_validator,
-    IPvAnyAddress,
     SecretStr,
     model_validator,
 )
@@ -40,10 +38,10 @@ from .validators import (
     validate_enabled,
     validate_not_enabled,
 )
-from ..Log import CLIENT_LOGGER_NAME
-from ..Models.DEFAULTS import *
 from ..Libs.API import ZMAPI
 from ..Libs.DB import ZMDB
+from ..Log import CLIENT_LOGGER_NAME
+from ..Models.DEFAULTS import *
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 
@@ -112,7 +110,81 @@ class SystemSettings(BaseModel):
     config_path: Optional[Path] = Field(Path(DEF_CLNT_SYS_CONFDIR))
     variable_data_path: Optional[Path] = Field(DEF_CLNT_SYS_DATADIR)
     tmp_path: Optional[Path] = Field(Path(DEF_CLNT_SYS_TMPDIR))
+    venv_path: Optional[Path] = None
     thread_workers: Optional[int] = Field(DEF_CLNT_SYS_THREAD_WORKERS)
+
+
+class ZMSPullMethod(DefaultNotEnabled):
+    sbf: Optional[int] = Field(
+        None,
+        description="Seconds between frame grabs for LIVE events"
+        " (1 would = 1 fps, 2 = .5 fps).",
+    )
+    url: Optional[AnyUrl] = Field(
+        None,
+        description="URL to the nph-zms cgi script (ex: http://zm.example.com/zm/cgi-bin/nph-zms). If not supplied it will be auto-detected.",
+    )
+    attempts: Optional[int] = Field(3, description="Number of attempts to get a frame from a PAST event")
+    delay: Optional[float] = Field(1.0, description="Delay between attempts on a PAST event")
+    max_frames: Optional[int] = Field(
+        0, description="Maximum number of frames to process (LIVE/PAST)"
+    )
+    timeout: Optional[int] = Field(10)
+
+    lp_: str = Field("", description="logging prefix", repr=False)
+
+    @model_validator(mode="after")
+    def _validate_model_after(self):
+        self.lp_ = f"{self.__class__.__name__}:"
+        return self
+
+
+class APIPullMethod(DefaultNotEnabled):
+    fps: Optional[int] = Field(
+        1, description="Frames per second to capture. Cannot be used with sbf."
+    )
+    sbf: Optional[int] = Field(
+        None,
+        description="Seconds between frame "
+        "(for image sources that only update every <x> seconds). "
+        "Cannot be used with fps.",
+    )
+    attempts: Optional[int] = Field(3)
+    delay: Optional[float] = Field(1.0)
+    check_snapshots: Optional[bool] = Field(True)
+    snapshot_frame_skip: Optional[int] = Field(3)
+    max_frames: Optional[int] = Field(0)
+    timeout: Optional[int] = Field(10)
+    lp_: str = Field("", description="logging prefix", repr=False)
+
+    @model_validator(mode="after")
+    def _validate_model_after(self):
+        self.lp_ = f"{self.__class__.__name__}:"
+        if self.fps and self.sbf:
+            logger.warning(
+                f"{self.lp_} fps and sbf cannot both be set, sbf takes precedence"
+            )
+            self.fps = None
+        elif not self.fps and not self.sbf:
+            logger.warning(
+                f"{self.lp_} fps and sbf are both not set, defaulting to 1 fps"
+            )
+            self.fps = 1
+        return self
+
+
+class PullMethod(BaseModel):
+    api: Optional[APIPullMethod] = None
+    zms: Optional[ZMSPullMethod] = None
+
+
+class PullMethod(BaseModel):
+    api: Optional[APIPullMethod] = Field(default_factory=APIPullMethod)
+    zms: Optional[ZMSPullMethod] = Field(default_factory=ZMSPullMethod)
+
+    _validate_ = field_validator("zms", "api", mode="before")(
+        validate_not_enabled
+    )
 
 
 class ZoneMinderSettings(BaseSettings, extra="allow"):
@@ -136,10 +208,16 @@ class ZoneMinderSettings(BaseSettings, extra="allow"):
             validate_no_scheme_url
         )
 
+    conf_dir: Path = Field(
+        Path("/etc/zm"),
+        description="Path to ZoneMinder config files, Default: /etc/zm",
+    )
     portal_url: Optional[AnyUrl] = Field(None)
     misc: Optional[ZMMisc] = Field(default_factory=ZMMisc)
     api: Optional[ZMAPISettings] = Field(default_factory=ZMAPISettings)
     db: Optional[ZMDBSettings] = Field(default_factory=ZMDBSettings)
+    pull_method: Optional[PullMethod] = Field(default_factory=ZMSPullMethod)
+
 
     _validate_portal_url = field_validator("portal_url", mode="before")(
         validate_no_scheme_url
@@ -323,91 +401,13 @@ class MLNotificationSettings(BaseModel):
     )
 
 
-class APIPullMethod(DefaultNotEnabled):
-    fps: Optional[int] = Field(
-        1, description="Frames per second to capture. Cannot be used with sbf."
-    )
-    sbf: Optional[int] = Field(
-        None,
-        description="Seconds between frame "
-        "(for image sources that only update every <x> seconds). "
-        "Cannot be used with fps.",
-    )
-    attempts: Optional[int] = Field(3)
-    delay: Optional[float] = Field(1.0)
-    check_snapshots: Optional[bool] = Field(True)
-    snapshot_frame_skip: Optional[int] = Field(3)
-    max_frames: Optional[int] = Field(0)
-    timeout: Optional[int] = Field(10)
-    lp_: str = Field("", description="logging prefix", repr=False)
-
-    @model_validator(mode="after")
-    def _validate_model_after(self):
-        self.lp_ = f"{self.__class__.__name__}:"
-        if self.fps and self.sbf:
-            logger.warning(
-                f"{self.lp_} fps and sbf cannot both be set, sbf takes precedence"
-            )
-            self.fps = None
-        elif not self.fps and not self.sbf:
-            logger.warning(
-                f"{self.lp_} fps and sbf are both not set, defaulting to 1 fps"
-            )
-            self.fps = 1
-        return self
-
-
-class ZMSPullMethod(DefaultNotEnabled):
-    fps: Optional[int] = Field(
-        1, description="Frames per second to capture. Cannot be used with sbf."
-    )
-    sbf: Optional[int] = Field(
-        None,
-        description="Seconds between frame "
-        "(for image sources that only update every <x> seconds). "
-        "Cannot be used with fps.",
-    )
-    url: Optional[AnyUrl] = Field(
-        None,
-        description="URL to the nph-zms cgi script (ex: http://zm.example.com/zm/cgi-bin/nph-zms). If not supplied it will be auto-detected.",
-    )
-    attempts: Optional[int] = Field(3, description="Number of attempts to get a frame")
-    delay: Optional[float] = Field(1.0, description="Delay between attempts")
-    max_frames: Optional[int] = Field(
-        0, description="Maximum number of frames to process"
-    )
-    timeout: Optional[int] = Field(10)
-
-    lp_: str = Field("", description="logging prefix", repr=False)
-
-    @model_validator(mode="after")
-    def _validate_model_after(self):
-        self.lp_ = f"{self.__class__.__name__}:"
-        if self.fps and self.sbf:
-            logger.warning(
-                f"{self.lp_} fps and sbf cannot both be set, sbf takes precedence"
-            )
-            self.fps = None
-        elif not self.fps and not self.sbf:
-            logger.warning(
-                f"{self.lp_} fps and sbf are both not set, defaulting to 1 fps"
-            )
-            self.fps = 1
-        return self
+class ColorDetectionSettings(DefaultNotEnabled):
+    top_n: Optional[int] = Field(3)
+    labels: Optional[List[Optional[str]]] = None
 
 
 class DetectionSettings(BaseModel):
     class ImageSettings(BaseModel):
-        class PullMethod(BaseModel):
-            shm: Optional[bool] = Field(False)
-            api: Optional[APIPullMethod] = Field(default_factory=APIPullMethod)
-            zmu: Optional[bool] = Field(False)
-            zms: Optional[ZMSPullMethod] = Field(default_factory=ZMSPullMethod)
-
-            _validate_ = field_validator("shm", "zmu", "zms", mode="before")(
-                validate_not_enabled
-            )
-
         class Debug(DefaultNotEnabled):
             path: Optional[Path] = Field(Path("/tmp"))
 
@@ -447,10 +447,8 @@ class DetectionSettings(BaseModel):
             confidence: Optional[bool] = Field(True)
 
         class Training(DefaultEnabled):
-            from tempfile import gettempdir
-
             enabled: Optional[bool] = Field(False)
-            path: Optional[Path] = Field(Path(gettempdir()) / "src/training")
+            path: Optional[Path] = Field(DEF_CLNT_SYS_IMAGEDIR + "train/")
 
         pull_method: Optional[PullMethod] = Field(default_factory=PullMethod)
         debug: Optional[Debug] = Field(default_factory=Debug)
@@ -462,6 +460,7 @@ class DetectionSettings(BaseModel):
     import_zones: Optional[bool] = Field(False)
     match_origin_zone: Optional[bool] = Field(False)
     images: Optional[ImageSettings] = Field(default_factory=ImageSettings)
+    color: Optional[ColorDetectionSettings] = Field(default_factory=ColorDetectionSettings)
 
 
 class BaseObjectFilters(BaseModel):
@@ -566,7 +565,9 @@ class MonitorZones(BaseModel):
     filters: Union[MatchFilters, OverRideMatchFilters, None] = Field(
         default_factory=OverRideMatchFilters
     )
+
     imported: bool = False
+
     __validate_resolution = field_validator("resolution", mode="before")(
         validate_resolution
     )
@@ -613,6 +614,7 @@ class ConfigFileModel(BaseModel):
 
 
 class ClientEnvVars(BaseSettings):
+
     zm_conf_dir: Path = Field(
         Path("/etc/zm"),
         description="Path to ZoneMinder config files, Default: /etc/zm",
@@ -646,6 +648,7 @@ class Result(BaseModel):
     label: str
     confidence: float
     bounding_box: List[int]
+    color: Optional[Dict[str, float]] = None
 
     def __eq__(self, other):
         if not isinstance(other, Result):
@@ -657,10 +660,16 @@ class Result(BaseModel):
         )
 
     def __str__(self):
-        return f"'{self.label}' ({self.confidence:.2f}) @ {self.bounding_box}"
+        _c: Optional[str] = None
+        if self.color:
+            _c = f" [Color: {self.color}]"
+        return f"'{self.label}'{_c} ({self.confidence:.2f}) @ {self.bounding_box}"
 
     def __repr__(self):
-        return f"<'{self.label}' ({self.confidence * 100:.2f}%) @ {self.bounding_box}>"
+        _c: Optional[str] = None
+        if self.color:
+            _c = f" [Color: {self.color}]"
+        return f"<'{self.label}'{_c} ({self.confidence * 100:.2f}%) @ {self.bounding_box}>"
 
 
 class DetectionResults(BaseModel, arbitrary_types_allowed=True):

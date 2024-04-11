@@ -733,6 +733,7 @@ class ZMClient:
         _start = time.time()
         global g
         strategy: MatchStrategy = g.config.matching.strategy
+        img_pull_method = self.config.zoneminder.pull_method
         if eid:
             g.eid = eid
             logger.info(
@@ -740,6 +741,7 @@ class ZMClient:
             )
 
             await self._get_db_data(eid)
+
             # Check that the cause from db has "Motion", "ONVIF" or "Trigger" in it
             if g.config.detection_settings.motion_only is True:
                 cause = self.db.cause_from_eid(eid)
@@ -766,8 +768,7 @@ class ZMClient:
             await self.db.get_all_event_data(eid)
         elif not eid and mid:
             logger.info(
-                f"{lp} Running detection for monitor {mid}, image pull method should be SHM or "
-                f"ZMU: {g.config.detection_settings.images.pull_method}"
+                f"{lp} Running detection for monitor {mid}, image pull method {img_pull_method}"
             )
             g.mid = mid
 
@@ -780,18 +781,12 @@ class ZMClient:
 
         # init Image Pipeline
         logger.debug(f"{lp} Initializing Image Pipeline...")
-        img_pull_method = self.config.detection_settings.images.pull_method
-        if img_pull_method.shm is True:
-            raise NotImplementedError(f"SHM image pulling is not supported yet")
+        if img_pull_method and img_pull_method.zms.enabled is True:
+            logger.debug(f"{lp} Using ZMS CGI for image source")
+            self.image_pipeline = ZMSImagePipeLine(img_pull_method.zms)
         elif img_pull_method.api and img_pull_method.api.enabled is True:
             logger.debug(f"{lp} Using ZM API for image source")
             self.image_pipeline = APIImagePipeLine(img_pull_method.api)
-        elif img_pull_method.zmu is True:
-            raise NotImplementedError(f"ZMU image pulling is not supported yet")
-
-        if img_pull_method.zms and img_pull_method.zms.enabled is True:
-            logger.debug(f"{lp} Using ZMS CGI for image source")
-            self.image_pipeline = ZMSImagePipeLine(img_pull_method.zms)
 
         models: Optional[Dict] = None
         self.static_objects.pickle()
@@ -810,7 +805,7 @@ class ZMClient:
                 )
                 models = self.config.monitors[g.mid].models
         else:
-            logger.critical(f"{lp} Monitor {g.mid} not found in global config object")
+            logger.critical(f"{lp} Monitor {g.mid} not found in monitors: section!")
         if not models:
             if self.config.detection_settings.models:
                 logger.debug(
@@ -884,84 +879,14 @@ class ZMClient:
                     self.zones[zone_name].points = zone_points
             del zones
         image: Union[bytes, np.ndarray, None]
-        route = g.config.mlapi
+        mlapi_cfg = g.config.mlapi
         matched_l, matched_c, matched_b = [], [], []
-        ml_user = g.config.mlapi.username
-        ml_pass = g.config.mlapi.password
-        ml_token = ""
-        ml_token_data = {}
-        mlapi_token_cache = g.config.system.variable_data_path / "misc/.ml_token.pkl"
-        if mlapi_token_cache.exists():
-            from jose import jwt
+        from .Libs.API.mlapi import MLAPI
+        mlapi = MLAPI(mlapi_cfg)
 
-            try:
-                ml_token_data = pickle.load(mlapi_token_cache.open("rb"))
-                ml_token = ml_token_data.get("access_token")
-
-            except Exception as e:
-                logger.error(f"{lp} Error loading token from cache: {e}")
-                ml_token = ""
-            else:
-                if ml_token:
-                    _decoded = jwt.get_unverified_claims(ml_token)
-                    _expire = _decoded.get("exp")
-                    expire_at = datetime.fromtimestamp(float(_expire))
-                    logger.debug(
-                        f"{lp} ZoMi token expires at: {expire_at} (TYPE: {type(_expire)})"
-                    )
-                    if _expire:
-                        if expire_at < datetime.now() - timedelta(minutes=5):
-                            logger.debug(
-                                f"{lp} Cached token expired (or about to expire), refreshing..."
-                            )
-                            ml_token = ""
-                        else:
-                            logger.debug(f"{lp} Cached token should still be valid!")
-        else:
-            mlapi_token_cache.touch(exist_ok=True, mode=0o640)
-
-        if not ml_token:
-            logger.debug(f"{lp} No cached token found, logging in to MLAPI...")
-
-            # login to the API, the endpoint is /login and
-            # it is a body request with username and password
-            url = f"{str(route.host).rstrip('/')}:{route.port}/login"
-            logger.debug(f"{lp} Logging in to ZoMi ML API @ {url}")
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url=url,
-                    data={
-                        "username": ml_user,
-                        "password": ml_pass.get_secret_value(),
-                    },
-                ) as r:
-                    status = r.status
-                    if status == 200:
-                        resp = await r.json()
-                        if ml_token := resp.get("access_token"):
-                            ml_token_data = resp
-                            logger.info(f"{lp} Login successful to ZoMi ML API")
-                            try:
-                                pickle.dump(ml_token_data, mlapi_token_cache.open("wb"))
-                            except Exception as e:
-                                logger.error(f"{lp} Error saving token to cache: {e}")
-                            else:
-                                logger.debug(
-                                    f"{lp} Token saved to cache: {mlapi_token_cache}"
-                                )
-
-                    else:
-                        logger.error(
-                            f"{lp}route '{route.name}' returned ERROR status {status} \n{r}"
-                        )
-
-        if not ml_token:
-            raise RuntimeError(
-                f"{lp} Login failed to ZoMi ML API, please check the credentials configured in your client config file. mlapi->username, mlapi->password."
-            )
 
         image_loop = 0
-        # todo: add relogin logic if the token is rejected.
+        # todo: add re-login logic if the token is rejected.
         # Use an async generator to get images from the image pipeline
         break_out: bool = False
         image_start = time.time()
@@ -988,95 +913,49 @@ class ZMClient:
                 # False is returned if the image stream has been exhausted
                 logger.warning(f"{lp} Image stream has been exhausted!")
                 break
-
-            results: Optional[List[DetectionResults]] = None
-            reply: Optional[Dict[str, Any]] = None
-
-            url = f"{str(route.host).rstrip('/')}:{route.port}/detect"
-            # base64 encode the image
-            images = json.dumps([base64.b64encode(image).decode("utf-8")])
-            hints = json.dumps([model for model in models.keys() if model])
-            mp = aiohttp.FormData()
-            mp.add_field("images", images, content_type="multipart/form-data")
-            mp.add_field("model_hints", hints, content_type="multipart/form-data")
-            logger.debug(
-                f"Sending image #{image_loop} to 'Machine Learning API' ['{route.name}' @ "
-                f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}]"
-            )
-            _perf = time.time()
-            r: aiohttp.ClientResponse
-            mlapi_timeout = g.config.mlapi.timeout
-            if mlapi_timeout is None:
-                mlapi_timeout = 90.0
-            session: aiohttp.ClientSession = g.api.async_session
-            try:
-                async with session.post(
-                    url,
-                    data=mp,
-                    timeout=aiohttp.ClientTimeout(total=mlapi_timeout),
-                    headers={
-                        "Authorization": f"Bearer {ml_token}",
-                    },
-                ) as r:
-                    r.raise_for_status()
-                    status = r.status
-                    if r.content_type == "application/json":
-                        reply = await r.json()
-                    else:
-                        logger.error(
-                            f"{lp} Route '{route.name}' returned a non-json response! \n{r}"
-                        )
-            # deal with unauthorized
-            except aiohttp.ClientResponseError as e:
-                logger.warning(f"{lp} API returned: {e}")
-                if e.status == 401:
-                    logger.error(
-                        f"{lp} API returned 401 unauthorized, trying to re-authorize with credentials"
-                    )
-                    ml_token = ""
-                continue
-
-            except Exception as e:
-                logger.error(f"{lp} Error sending image to API: {e}")
-                continue
-
-            logger.debug(
-                f"perf:{lp} Detection request #{image_loop} to '{route.name}' completed in "
-                f"{time.time() - _perf:.5f} seconds"
-            )
-
             assert isinstance(
                 image, bytes
             ), "Image is not bytes after getting from pipeline"
             image: bytes
 
+            results: Optional[List[DetectionResults]] = None
+            reply: Optional[Dict[str, Any]] = None
+            # JSONify, images and hints, base64 encode the image and wrap it in a list
+            images = json.dumps([base64.b64encode(image).decode("utf-8")])
+            # hints are model names we want run
+            hints = json.dumps([model for model in models.keys() if model])
+            reply = await mlapi.inference(images, hints)
+
             if image_name not in final_detections:
+                logger.debug(f"Adding {image_name=} to final_detections")
                 final_detections[str(image_name)] = []
             if image_name not in self.filtered_labels:
+                logger.debug(f"Adding {image_name=} to self.filtered_labels")
                 self.filtered_labels[str(image_name)] = []
+
             if reply:
                 results = []
-                # logger.debug(f"DBG>>> {reply = }")
-
-                for img_result in reply:
-                    for result_ in img_result:
-                        results.append(DetectionResults(**result_))
+                logger.debug(f"DBG>>> {reply = }")
                 image = await self.convert_to_cv2(image)
                 assert isinstance(
                     image, np.ndarray
                 ), "Image is not np.ndarray after converting from bytes"
                 image: np.ndarray
-                filter_start = time.time()
-                res_loop = 0
 
-                result: DetectionResults
+                for img_results in reply:
+                    for result_ in img_results:
+                        results.append(DetectionResults(**result_))
+
+                filter_start = time.time()
+                result_loop = 0
                 for result in results:
-                    res_loop += 1
+                    result_loop += 1
                     if break_out is True:
                         continue
                     if strategy == MatchStrategy.first and matched_l:
                         logger.debug(
-                            f"Strategy is 'first' and there is a filtered match, breaking out of RESULT loop {res_loop}"
+                            f"Strategy is 'first' and there is a filtered match, "
+                            f"breaking out of RESULT loop {result_loop}"
                         )
                         break_out = True
                         continue
@@ -1088,13 +967,15 @@ class ZMClient:
                     if result.success is True:
                         l = len(result.results)
                         logger.debug(
-                            f"There {'are' if l > 1 else 'is'} {l} UNFILTERED {'results' if l > 1 else 'result'} from model: {result.name} for image '{image_name}'"
+                            f"There {'are' if l > 1 else 'is'} {l} UNFILTERED {'results' if l > 1 else 'result'} "
+                            f"from model: {result.name} for image '{image_name}'"
                         )
-
                         filtered_result = await self.filter_detections(
                             result, image_name
                         )
-                        # check strategy
+
+
+                        # todo: fix the strategy matching logic. first-match, first-frame
                         strategy: MatchStrategy = g.config.matching.strategy
                         if filtered_result.success is True:
                             final_label = []
@@ -1165,25 +1046,23 @@ class ZMClient:
                         )
 
                     else:
-                        logger.warning(f"{LP} Result was not successful, not filtering")
+                        logger.warning(f"{LP} detection result was not successful, not filtering")
 
             img_time = time.time() - image_start
             img_msg = f"perf:{LP} IMAGE #{image_loop} took {img_time:.5f} seconds"
             if not g.past_event and img_time < 1.0:
                 remaining = 1.0 - img_time
-                img_msg = f"{img_msg} (live target: 1 FPS), sleeping for {remaining:.5f}"
+                img_msg = (
+                    f"{img_msg} (live target: 1 FPS), sleeping for {remaining:.5f}"
+                )
                 logger.debug(f"{img_msg}")
                 await asyncio.sleep(remaining)
-                logger.debug(f"DBG>>> END OF SLEEP")
+                logger.debug("DBG>>> END OF SLEEP")
             else:
                 logger.debug(f"{img_msg}")
             image_start = time.time()
 
-        logger.debug(
-            f"perf:{LP} Camera: '{g.mon_name}' (ID: {g.mid}) :: TOTAL detections took "
-            f"{time.time() - _start:.5f} seconds"
-        )
-        # logger.debug(f"\n\n\nFINAL RESULTS: {final_detections}\n\n\n")
+        monitor_perf_end = time.time() - _start
         if matched_l:
             matched = {
                 "labels": matched_l,
@@ -1200,15 +1079,27 @@ class ZMClient:
                 f"based on strategy of {strategy}, BEST MATCH IS {matched['labels']} from frame ID: {matched['frame_id']}"
             )
 
-            await self.post_process(matched)
+            if not g.past_event:
+                await self.post_process(matched)
+                self.static_objects.pickle(
+                    labels=matched_l, confs=matched_c, bboxs=matched_b, write=True
+                )
+            else:
+                logger.info(
+                    f"{LP} This is a past event, not post processing or writing static_object data"
+                )
+
             if "frame_img" in matched:
                 matched.pop("frame_img")
-            self.static_objects.pickle(
-                labels=matched_l, confs=matched_c, bboxs=matched_b, write=True
-            )
 
-            return matched
-        return {}
+        else:
+            matched = {}
+
+        logger.debug(
+            f"perf:{LP} Camera: '{g.mon_name}' (ID: {g.mid}) :: TOTAL detections took "
+            f"{monitor_perf_end:.5f} seconds"
+        )
+        return matched
 
     async def filter_detections(
         self,
@@ -1265,7 +1156,7 @@ class ZMClient:
         ret_results = []
         processor = result.processor
         found_match: bool = False
-        label, confidence, bbox = None, None, None
+        label, confidence, bbox, color = None, None, None, None
         _zn_tot = len(zones)
         _lbl_tot = len(result.results)
         idx = 0
@@ -1289,10 +1180,11 @@ class ZMClient:
         # Outer Loop
         _result: Result
         for _result in result.results:
-            label, confidence, bbox = (
+            label, confidence, bbox, color = (
                 _result.label,
                 _result.confidence,
                 _result.bounding_box,
+                _result.color
             )
             i += 1
             _lp = f"fltr:{model_name}:'{label}' {i}/{_lbl_tot}:"
@@ -1615,6 +1507,11 @@ class ZMClient:
                                         continue
                                 else:
                                     logger.debug(f"{lp} no min_area set")
+
+                                # color filtering
+                                logger.debug(f'DBG>>> this is where color filtering should go: {color = } // '
+                                             f'{g.config.detection_settings.color = }')
+
                                 s_o: Optional[bool] = None
                                 s_o_reason: Optional[str] = "<DFLT>"
                                 s_o = g.config.matching.static_objects.enabled
@@ -1752,10 +1649,6 @@ class ZMClient:
         """
         lp = f"create_animations::"
         logger.debug(f"{lp} STARTED")
-        # if this is an api event, we grab images from the api
-        # if it is shm or zmu we will grab from the global frame buffer
-        if g.config.detection_settings.images.pull_method.api.enabled:
-            logger.debug(f"{lp} pull_method is API, grabbing images from API")
 
     def check_for_static_objects(
         self, current_label, current_confidence, current_bbox_polygon, zone_name
@@ -2232,7 +2125,7 @@ class ZMClient:
                     if exc_:
                         raise exc_
                 except Exception as exc:
-                    logger.error(f"{lp} failed to send notification: {exc}")
+                    logger.error(f"{lp} failed to send notification: {exc}", exc_info=True)
                     # raise exc
                 else:
                     future.result()
@@ -2241,6 +2134,7 @@ class ZMClient:
         del noti_img
 
     async def post_process(self, matches: Dict[str, Any]) -> None:
+        perf_postproc_start = time.time()
         labels, scores, boxes = (
             matches["labels"],
             matches["confidences"],
@@ -2328,7 +2222,6 @@ class ZMClient:
 
         jpg_file = g.event_path / "objdetect.jpg"
         object_file = g.event_path / "objects.json"
-        objdetect_jpg = False
         try:
             objdetect_jpg = cv2.imwrite(jpg_file.as_posix(), prepared_image)
         except Exception as write_img_exc:
@@ -2401,31 +2294,27 @@ class ZMClient:
         logger.info(f"{lp}prediction: '{pred}'")
         # Check notes and replace if necessary
         old_notes: str = g.db.event_notes(g.eid)
-        notes_zone = old_notes.split(":")[-1]
-        # if notes_zone:
-
         new_notes = f"{new_notes} {g.event_cause}"
-        if g.config.zoneminder.misc.write_notes:
-            _write_notes = False
-            if old_notes is not None:
-                if new_notes != old_notes:
-                    _write_notes = True
-                elif new_notes == old_notes:
-                    logger.debug(f"{lp} notes do not need updating!")
-            else:
+        _write_notes = False
+        if old_notes is not None:
+            if new_notes != old_notes:
                 _write_notes = True
+            elif new_notes == old_notes:
+                logger.debug(f"{lp} notes do not need updating!")
+        else:
+            _write_notes = True
 
-            if _write_notes:
-                try:
-                    g.db.set_event_notes(g.eid, new_notes)
-                except Exception as custom_push_exc:
-                    logger.error(
-                        f"{lp} error during notes update API put request-> {custom_push_exc}"
-                    )
-                else:
-                    logger.debug(
-                        f"{lp} replaced old note: '{new_notes}'",
-                    )
+        if _write_notes:
+            try:
+                g.db.set_notes(g.eid, new_notes)
+            except Exception as custom_push_exc:
+                logger.error(
+                    f"{lp} error during notes DB update request-> {custom_push_exc}"
+                )
+            else:
+                logger.debug(
+                    f"{lp} replaced old note with: '{new_notes}'",
+                )
 
         # Check version of zm, if 1.37.44 or greater, we can manage tags
         zm_ver = g.db.get_zm_version()

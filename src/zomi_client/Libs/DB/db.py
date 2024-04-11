@@ -176,7 +176,10 @@ class ZMDB:
 
     def read_zm_configs(self):
         files = []
-        conf_path = self.env.zm_conf_dir
+        conf_path = g.config.zoneminder.conf_dir
+        if not conf_path:
+            logger.debug(f"{LP} no ZM .conf files found in config file (zoneminder>conf_dir), checking ENV vars")
+            conf_path = self.env.zm_conf_dir
         if conf_path.is_dir():
             for fi in Path(f"{conf_path}/conf.d").glob("*.conf"):
                 files.append(fi)

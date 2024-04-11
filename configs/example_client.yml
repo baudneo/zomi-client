@@ -44,37 +44,34 @@ system:
 
 
 zoneminder:
-  # - The web portal URL. (https://zm.myDomain.com/zm , http://localhost/zm, etc.)
+  # - Where the zm .conf files are located (Default: /etc/zm) * REQUIRED *
+  conf_dir: /etc/zm
+  # - The web portal URL. (https://zm.myDomain.com/zm , http://localhost/zm, etc.) * REQUIRED *
   portal_url: ${ZM_PORTAL}
+
+  # - API specific settings
   api:
     # - The ZM API URL (https://zm.myDomain.com/zm/api , http://localhost/zm/api, etc.)
+    # - If not supplied, the portal_url is used to construct it (portal_url + /api)
     api_url: ${ZM_API}
-    # - If you have authentication enabled for youre ZM instance,
-    # - set the user and password
+    # - If you have authentication enabled for ZM,
+    # - set the user and password. Comment out to disable API authentication.
     user: ${ZM_USER}
     password: ${ZM_PASS}
     # - A value of 'no' will allow self-signed certs
     ssl_verify: no
 
     headers:
-      # - Add custom headers to all portal and api requests
+      # - Add custom headers to all ZM HTTP requests
       # - Name-Of-Header: Value Of Header
       # - NOTE: The 'Authorization' header is automatically added if you have a user and password set
 
-  misc:
-    # - Write detection results to the 'Notes' section if the trigger is an event
-    # - This will only work if the ZM API user has permission to write to the notes section
-    write_notes: yes
-
+  # - You only need to configure this in extreme cases.
+  # - The db connection is configured automatically
   db:
-    # - To automatically get db info from zm .conf files,
-    # - set this to the correct path and leave the below values commented out
-    zm_conf_dir: ${ZM_CONF_DIR}
-    # - You only need to configure this in extreme cases.
     # - Default: the system will first look in ENV,
-    # - then look in ZM .conf files,
+    # - then look in ZM .conf files, (Recommended)
     # - then use the configured values below. Meaning the below values take precedence.
-
     # - DB Host/Port
     #host: ${ZM_DB_HOST}
     #port: ${ZM_DB_PORT}
@@ -83,9 +80,56 @@ zoneminder:
     #password: ${ZM_DB_PASS}
     # - DB name
     #name: ${ZM_DB_NAME}
-
-    # - Python database driver to use, mysql+pymysql is the default
+    # - Python database driver to use (Default: mysql+pymysql)
     #driver: mysql+pymysql
+
+  # - How to grab images from ZM
+  pull_method:
+    # - ZMS is the CGI app that comes with ZM. It is the fastest way to grab images from ZM.
+    zms:
+      enabled: yes
+      # - The complete URL to zms cgi script (i.e.: https://zm.example.com/zm/cgi-bin/nph-zms)
+      # - If not supplied it tries to use the portal_url, api_url and ZMS_CGI_PATH to construct it
+      #url:
+      # - Timeout in seconds for image grab request
+      timeout: 15
+      # - Only grab a maximum of x frames
+      max_frames: 10
+      # - Seconds Between frames (1 = 1 fps, 0.5 = 2 fps, 0.25 = 4 fps, etc.)
+      # 1 is default and recommended unless it is a time lapse camera
+      sbf: 1
+
+      # - Attempts and Delays are only used if the event is a past event
+      # - A past event already has images/video written to disk, so it uses a different method than LIVE events
+      attempts: 3  # attempts to grab the requested frame
+      delay: 1.0   # delay between failed attempts
+
+    # - API is much slower than ZMS.
+    api:
+      enabled: no
+      # Timeout in seconds for image grab request
+      timeout: 15
+      # - How many frames per second should be grabbed to run Object Detection on (Default: 1)
+      # - the monitors capturing FPS is grabbed from ZM and used to calculate the frame id to grab.
+      fps: 1
+      # - ANY of the delay options can be set as xx or xx.yy (int/float)
+      # - Attempts to grab the requested frame, if it fails, it will retry the specified number of times
+      attempts: 3
+      # delay between failed attempts
+      delay: 1.2
+
+      # - Only grab x frames TOTAL
+      # - Default: Calculated based on event duration and monitor capturing FPS
+      max_frames: 10
+
+      # - snapshot is the highest alarmed frame ID and can change as an event is ongoing
+      # - This will check if the snapshot frame ID has changed every 3 frames and if so, grab the new snapshot frame
+      check_snapshots: yes
+
+      # Check if the snapshot FID has changed every <x> frames. Set to 1 to check every frame.
+      # Snapshot FID = to the frame ID that has the highest alarm score in the event (thus far)
+      snapshot_frame_skip: 3
+
 
 logging:
   # - Root logging level
@@ -122,6 +166,7 @@ logging:
     #user:
     #group:
 
+# - ML Server connection settings
 mlapi:
   name: ${ROUTE_NAME}
   host: ${ROUTE_HOST}  # IP or hostname (add https:// if TLS encrypted)
@@ -132,9 +177,6 @@ mlapi:
 
 
 notifications:
-  ########################
-  #  NOTIFICATIONS ARE WIP
-  ########################
   mqtt:
     # - Use a MQTT client to publish messages to a broker
     enabled: no
@@ -266,7 +308,7 @@ notifications:
     # - Show a clickable link to view the event in a browser (only once inside the Gotify App).
     # - this is handy if the notification goes out to a device without zmNinja installed.
     # - They can just click the link and view the event in a regular browser.
-    # - NOTE: Your ZM server may need to be accessible externally for this to work correctly.
+    # - NOTE: Your ZM server needs to be accessible externally for this to work correctly.
 
     # !! WARNING: If you use this, you are POTENTIALLY sending your ZM user and password (or JWT access token) to the Gotify server/clients,
     # - if no SSL is used IT WILL BE CLEAR TEXT! So USE SSL!
@@ -274,14 +316,14 @@ notifications:
     # - [Default: no]
     clickable_link: yes
 
-    # - The ZM API user for the clickable URL link in the pushover notification. I HIGHLY recommend HTTPS on your ZM host,
-    # - making a user with VIEW privileges of stream and events only and using that for push_user and pas
+    # - The ZM API user for the clickable URL link in the notification. I HIGHLY recommend HTTPS on your ZM host,
+    # - making a user with VIEW privileges of stream and events only and using that for link_user/pass
     # - EXAMPLE: make a user named 'PushView' with VIEW privs only for STREAM and EVENT
     # - [Default: None]
     link_user: ${LINKURL_USER}
     link_pass: ${LINKURL_PASS}
 
-    # - Control the 'View event in browser' video URL params ->
+    # - Control the link event video URL params ->
     # - zm.example.com/zm/cgi-bin/nph-zms? ----- continued next line ------
     # - mode={_mode}&scale={_scale}&maxfps={_max_fps}&buffer={_buffer}&replay={_replay}
     url_opts:
@@ -311,10 +353,9 @@ notifications:
       enabled: no
       # - [Default: 30]
       seconds: 30
-    # - send the message to a specififc device (leave blank to send to all devices)
+    # - send the message to a specific device (leave blank to send to all devices)
     # - [Default: <Nothing>]
     device:
-
 
     animation:
       enabled: no
@@ -347,7 +388,7 @@ notifications:
     # - [Default: no]
     clickable_link: yes
 
-    # - The ZM API user for the clickable URL link in the pushover notification. I HIGHLY recommend HTTPS on your ZM host,
+    # - The ZM API user for the clickable URL link in the notification. I HIGHLY recommend HTTPS on your ZM host,
     # - making a user with VIEW privileges of stream and events only and using that for link_user and link_pass
     # - example: make a user named 'notifications' with VIEW privileges only for STREAM and EVENT
     # - [Default: None]
@@ -405,6 +446,65 @@ notifications:
       - results  # [ {label: person, conf: 0.68, bbox: (x, y, x2, y2)},  ]
       # - x,y = top left corner x2, y2 = bottom left corner
 
+detection_settings:
+  # - Only run on events that were triggered by Motion, ZM Trigger or ONVIF.
+  # - This will skip "Continuous" events
+  motion_only: yes
+
+
+  models:
+    # - Models to run on all monitors
+    # - NOTE: You can override these settings per monitor in monitors: section
+    yolo-nas-l ort:
+    yolov8x ort:
+
+  # - Import zones that have been defined in ZM Web GUI
+  import_zones: yes
+
+  # - object must be in one of the zones that triggered the motion event
+  # - 1 pixel inside the zone is enough to trigger this.
+  # - IMPLIES: import_zones MEANING, it will import zm zones and use them
+  match_origin_zone: no
+
+  images:
+    # - Save debug images to disk (Every frame grabbed from the source)
+    # - BE AWARE, if you leave this on and forget, it will eat up disk space
+    debug:
+      # - Shows bounding box of filtered out detections in RED
+      # - Everything that didnt make it past filters will be drawn in red
+      enabled: no
+      # - Where to save the debug images Default: <images_dir>/debug
+      path: ${IMAGE_DIR}/debug
+
+    # - What to draw onto the matching image
+    annotation:
+      # - NOTE: Bounding box and object label are always drawn on the matching frame
+      # - Show the confidence level of the detection
+      confidence: yes
+
+      # - Show which model detected the object
+      model:
+        enabled: no
+        # - Show which processor the model used
+        processor: no
+
+      # - Draw zone polygons on image
+      zones:
+        enabled: no
+        # - Print the name of the zone to identify it (this is best try depending on zone size)
+        show_name: no
+        # - Color of the zone polygon (B, G, R)
+        color: (255, 255, 255)
+        # - Thickness of the zone polygon line
+        thickness: 2
+
+    training:
+      # NOT IMPLEMENTED ***
+      # - Save an image and a JSON file for ML model training/testing purposes
+      # - The image is the unmodified original image with no annotations (useful for testing or negative training)
+      enabled: no
+      path: ${IMAGE_DIR}/train
+
 # - These are 'groups' of labels that can be used in most options that accept a class or label
 label_groups:
   animals:
@@ -439,124 +539,6 @@ label_groups:
     - 5H4D0W
     - 1337H4X0R
 
-detection_settings:
-  # - Only run on events that were triggered by Motion, ZM Trigger or ONVIF.
-  # - This will skip "Continuous" events
-  motion_only: yes
-
-
-  models:
-    # - Models to run on all monitors
-    # - NOTE: You can override these settings per monitor in monitors: section
-    yolo-nas-l trt:
-    yolov8x trt:
-
-  # - Detect color of most dominant object by cropping its bounding box and finding top_n dominant colors
-  detect_color:
-    # - GLOBAL:: This will detect color for all monitors, can be overridden per monitor and per zone.
-    enabled: yes
-    # - Top N colors to detect (Default: 3)
-    top_n: 3
-    # - Only detect the color of these labels (label_groups supported)
-    labels:
-      # - If no labels are defined, 'all' labels will be implied
-      - vehicles
-
-  # - Import zones that have been defined in ZM Web GUI
-  import_zones: yes
-
-  # - object must be in one of the zones that triggered the motion event
-  # - 1 pixel inside the zone is enough to trigger this.
-  # - IMPLIES: import_zones MEANING, it will import zm zones and use them
-  match_origin_zone: no
-
-  images:
-    # - How to grab images from ZM
-    pull_method:
-
-      # - ZMS is the CGI app that comes with ZM. It is the fastest way to grab images from ZM.
-      zms:
-        enabled: yes
-        # - Timeout in seconds for image grab request
-        timeout: 15
-
-        # - The complete URL to zms cgi script (i.e.: https://zm.example.com/zm/cgi-bin/nph-zms)
-        # - If not supplied it tries to use the portal_url, api_url and ZMS_CGI_PATH to construct it
-        #url:
-
-        # - Seconds Between frames
-        sbf: 1
-
-        # - ANY of the delay options can be set as xx or xx.yy (int/float)
-        attempts: 3  # attempts to grab the requested frame
-        delay: 1.2   # delay between failed attempts
-        max_frames: 10  # Only grab a maximum of x frames (Default: Calculated based on event duration and monitor capturing FPS)
-
-      # - API is slower than ZMS.
-      api:
-        enabled: no
-        # Timeout in seconds for image grab request
-        timeout: 15
-        # - How many frames per second should be grabbed to run Object Detection on (Default: 1)
-        # - the monitors capturing FPS is grabbed from ZM and used to calculate the frame id to grab.
-        fps: 1
-        # - ANY of the delay options can be set as xx or xx.yy (int/float)
-        # - Attempts to grab the requested frame, if it fails, it will retry the specified number of times
-        attempts: 3
-        # delay between failed attempts
-        delay: 1.2
-
-        # - Only grab x frames TOTAL
-        # - Default: Calculated based on event duration and monitor capturing FPS
-        max_frames: 10
-
-        # - snapshot is the highest alarmed frame ID and can change as an event is ongoing
-        # - This will check if the snapshot frame ID has changed every 3 frames and if so, grab the new snapshot frame
-        check_snapshots: yes
-
-        # Check if the snapshot FID has changed every <x> frames. Set to 1 to check every frame.
-        # Snapshot FID = to the frame ID that has the highest alarm score in the event (thus far)
-        snapshot_frame_skip: 3
-
-    # - Save debug images to disk (Every frame grabbed from the source)
-    # - BE AWARE, if you leave this on and forget, it will eat up disk space
-    debug:
-      # - Shows bounding box of filtered out detections in RED
-      # - Everything that didnt make it past filters will be drawn in red
-      enabled: no
-      # - Where to save the debug images Default: <images_dir>/debug
-      path: ${IMAGE_DIR}/debug
-
-    # - What to draw onto the matching image
-    annotation:
-      # - NOTE: Bounding box and object label are always drawn on the matching frame
-
-      # - Draw zone polygons on image
-      zones:
-        enabled: no
-        # - Print the name of the zone to identify it (this is best try depending on zone size)
-        show_name: no
-        # - Color of the zone polygon (B, G, R)
-        color: (255, 255, 255)
-        # - Thickness of the zone polygon line
-        thickness: 2
-
-      # - Show which model detected the object
-      model:
-        enabled: no
-        # - Show which processor the model used
-        processor: no
-
-      # - Show the confidence level of the detection
-      confidence: yes
-
-    training:
-      # - Save 2 images and a JSON file for ML model training/testing purposes
-      # - 1 image has bounding boxes around the detected objects with info in the JSON file
-      # - The other image is the unmodified original image (useful for testing or negative training)
-      enabled: no
-      path: ${IMAGE_DIR}/training_images
-
 
 matching:
   # - Can use: first, most, most_unique, union[WIP]
@@ -566,9 +548,10 @@ matching:
   # -- most: Find the best match after processing the event
   strategy: first
 
+  # *** The following are globally applied to all monitors but can be overridden on a per monitor/zone basis (in monitors: section)
+
   # - Remove matches that seem to be 'in the same place'.
-  # - Comparison is between the previous detections best
-  # - match and ongoing detected objects.
+  # - Comparison is between the previous detection match and ongoing detected objects.
   static_objects:
     enabled: no
     # - The max difference in the center of the objects bounding box between previous and current detection.
@@ -581,7 +564,6 @@ matching:
       # - The label of the object to check for (label_groups supported)
       - vehicles
 
-  # - This is globally applied to all monitors but can be overridden on a per monitor/zone basis (in monitors: section)
   # - Filtering is done on the results returned by the ML server (if any).
   filters:
     # - There are 3 types of model filters: object, face, alpr
@@ -604,15 +586,17 @@ matching:
       # pattern: "(ab[a-z]?123)"
       min_conf: 0.456
 
+
+# * Override settings based on which monitor an event was triggered by
+# - This is where most of the powerful stuff happens. Filtering to get the results you want to be notified about.
+# - You can override almost all settings on a per-monitor/zone basis.
 monitors:
-  # - Add a default ML zone for each monitor ID if no zones defined or imported
+  # * Add a default ML zone for each monitor ID if no zones defined or imported
   # - This will create a zone to look for objects in the entire image
   # - ONLY if NO zones are defined/imported for that monitor OR the zone is defined and set to enable: no
   create_default_full_image_zone: yes
 
-  # - Override settings based on which monitor an event was triggered by
-  # - This is where most of the powerful stuff happens. Filtering to get the results you want to be notified about.
-  # - You can override almost all settings on a per-monitor basis and even finer grained per zone.
+  # *** Examples ***
   999999999901:  # Monitor ID from ZM
     # - Override global models for this monitor
     # - These model names are defined in the zomi server config
@@ -627,9 +611,9 @@ monitors:
       yolov7x:
         enabled: no
 
-    # - Override global static objects
+    # - Monitor static objects overrides
     static_objects:
-      enabled: no
+      enabled: yes
       # - Difference in area between current and previous detection
       difference: 68%
       # - Only apply to these labels (label_groups supported)
@@ -686,8 +670,10 @@ monitors:
           # - FOR NON-IMPORTED ZONE.
           # - Used to scale polygon points if the monitor resolution has changed.
           # - When you created polygon it was in 4K mode, but now you are running in 1080p mode. It will scale it properly.
-          # - Strings like "1080p" "4k" "4kuhd"("uhd") "720p" are supported or a tuple of (width, height)
-          resolution: 4kuhd
+          # - Strings like "1080p" "4k" "4kuhd"("uhd") "720p" are supported or a tuple of (height, width)
+
+          # *** A Tuple in yaml is defined as [1, 2, 3]
+          resolution: 1080p  # [1080, 1920]
 
           # - This is on the Zone level and will take precedence over the global and per monitor setting
           static_objects:
@@ -697,15 +683,7 @@ monitors:
             labels:
               - vehicles
 
-          # - After successful filtering, the remaining objects will be checked for top_n dominant colors
-          detect_color:  # WIP aka not working yet
-            enabled: no
-            # - Top X colors to detect (Default: 3)
-            top_n: 3
-            # - Only detect the color of these labels (label_groups supported)
-            labels:
-              # - If no labels are defined (all is implied)
-              - vehicles
+          # - Zone level filters overrides
           filters:
             object:
               pattern: "(TEST_MON_1_ZONE_LEVEL|person|dog|cat|chewbacca)"

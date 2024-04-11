@@ -112,10 +112,11 @@ class PipeLine:
             f"{lp} incrementing next frame ID to read by {self.increment_by} = {self.current_frame}"
         )
         if image:
+            img_name = f"mid_{g.mid}_random_{random.randint(0,1000)}.jpg"
             # (bytes, image_file_name)
             return (
                 image,
-                f"mid_{g.mid}.jpg",
+                img_name,
             )
         return None, None
 
@@ -240,7 +241,7 @@ class APIImagePipeLine(PipeLine):
         fid_url = (
             f"{portal_url}/index.php?view=image&eid={g.eid}&fid={self.current_frame}"
         )
-        timeout = g.config.detection_settings.images.pull_method.api.timeout or 15
+        timeout = g.config.zoneminder.pull_method.api.timeout or 15
 
         for image_grab_attempt in range(self.max_attempts):
             image_grab_attempt += 1
@@ -350,7 +351,7 @@ class ZMSImagePipeLine(PipeLine):
             return False, None
 
         lp = f"{LP}ZMS:read:"
-        timeout = g.config.detection_settings.images.pull_method.zms.timeout
+        timeout = g.config.zoneminder.pull_method.zms.timeout or 15
         letters = string.ascii_lowercase
 
         if not g.past_event:
@@ -386,7 +387,7 @@ class ZMSImagePipeLine(PipeLine):
                 img_reason = f" response is not bytes -> Type: {type(api_response)} -- {api_response = }"
 
             if return_img:
-                return return_img, f"mid_{g.mid}.jpg"
+                return return_img, f"mid_{g.mid}_rand_{random.randint(0,1000)}.jpg"
 
             logger.warning(f"{lp} image was not retrieved!{img_reason}")
 

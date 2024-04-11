@@ -13,8 +13,9 @@ from ..Models.config import (
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 
+
 class CoolDownBase:
-    _cooldown_str = "cooldown_m{mid}.json"
+    _cooldown_str = ".cooldown_m{mid}.json"
     data_dir: Path
     lp: str = "CoolDown:"
     config: Union[
@@ -40,10 +41,10 @@ class CoolDownBase:
                 json.dump({"last_sent": datetime.timestamp(datetime.now())}, f)
         except Exception as e:
             logger.error(
-                f"Gotify: Failed to write cooldown file: {cooldown_file} -- {e}"
+                f"{self.lp} Failed to write file: {cooldown_file} -- {e}"
             )
         else:
-            logger.debug(f"Gotify: Cooldown file written: {cooldown_file}")
+            logger.debug(f"{self.lp} File written: {cooldown_file}")
 
     def check_cooldown(self, mid: int):
         # JSON: {'last_sent': 1685383194.070348 }
@@ -63,7 +64,7 @@ class CoolDownBase:
                         data = json.load(f)
                 except Exception as e:
                     logger.error(
-                        f"{self.lp} Failed to read cooldown file: {cooldown_file} -- {e}"
+                        f"{self.lp} Failed to read file: {cooldown_file} -- {e}"
                     )
                 else:
                     if data:
@@ -74,15 +75,15 @@ class CoolDownBase:
                             # check if cooldown has passed
                             if (datetime.now() - last_sent_ts) < cooldown:
                                 logger.warning(
-                                    f"{self.lp} Cooldown for monitor {mid} has not passed yet, not sending a notification"
+                                    f"{self.lp} Monitor {mid} cooldown has not passed yet, skipping notification..."
                                 )
                                 return False
                             else:
                                 logger.debug(
-                                    f"{self.lp} Cooldown for monitor {mid} has passed, sending a notification"
+                                    f"{self.lp} Monitor {mid} cooldown has passed, sending a notification"
                                 )
             else:
                 logger.warning(
-                    f"{self.lp} Cooldown file does not exist: {cooldown_file.as_posix()}"
+                    f"{self.lp} file does not exist: {cooldown_file.as_posix()}"
                 )
         return True
