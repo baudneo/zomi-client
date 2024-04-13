@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import shutil
 import venv
 import platform
@@ -48,7 +49,7 @@ console.setFormatter(log_formatter)
 logger.addHandler(console)
 
 # Misc.
-__dependencies__ = "psutil", "requests", "tqdm", "distro"
+__dependencies__ = "psutil", "requests", "tqdm", "distro", "venv"
 __doc__ = """Install ZoMi Machine Learning Client - Custom"""
 
 # Logic
