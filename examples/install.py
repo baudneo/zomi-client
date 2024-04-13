@@ -1290,7 +1290,7 @@ if __name__ == "__main__":
         logger.info(
             "Detected to be running in a virtual environment, "
             "be aware this install script creates "
-            "a venv for zomi to run in!"
+            "a venv for itself!"
         )
     file_handler = logging.FileHandler(install_log, mode="w")
     file_handler.setFormatter(log_formatter)
