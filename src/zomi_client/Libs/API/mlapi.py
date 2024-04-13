@@ -26,12 +26,12 @@ class MLAPI:
     port: int
     username: str
     password: str
-    token: str
+    token: Optional[str] = None
     _session: Optional[aiohttp.ClientSession]
     lp: str = "mlapi:"
     tasks: List[asyncio.Task] = []
 
-    def __init__(self, config: ServerRoute):
+    def __init__(self, config: "ServerRoute"):
         global g
 
         g = get_global_config()
@@ -45,13 +45,7 @@ class MLAPI:
         self.username = config.username
         self.password = config.password.get_secret_value()
 
-        cached_tkn = self.cached_token
-        if cached_tkn:
-            if not self.check_token(cached_tkn):
-                cached_tkn = None
-        if not cached_tkn:
-            self.tasks.append(asyncio.create_task(self.login(), name="init_login"))
-
+        _ = self.cached_token
         atexit.register(self.clean_up)
 
     def clean_up(self):
@@ -144,6 +138,7 @@ class MLAPI:
         Login to the ML API; the endpoint is /login.
         Provide a body request with username and password.
         """
+
         lp = f"{self.lp}login:"
         ml_token = None
         url = self.base_url + "/login"
@@ -189,6 +184,8 @@ class MLAPI:
         :param images: The images to send in a JSON formatted string
         :param hints: The hints to send in a JSON formatted string
         """
+        if not self.token:
+            await self.login()
         reply = {}
         url = self.base_url + "/detect"
         lp = f"{self.lp}inference:"

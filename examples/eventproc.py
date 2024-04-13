@@ -128,7 +128,7 @@ async def main():
     assert cfg_file, "No config file supplied via CLI or ENV"
     g.config_file = cfg_file
     logger.info(
-        f"{lp} Event: {args.event} [Event ID: {eid}] || SHM: {args.shm} ||"
+        f"{lp} Event: {args.event} [Event ID: {eid}] ||"
         f"{' || Monitor ID: ' if mid else ''}{mid if mid else ''} || "
         f"Config File: {cfg_file}"
     )

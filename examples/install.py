@@ -1013,10 +1013,14 @@ def do_install():
     _venv = ZoMiEnvBuilder(
         with_pip=True, cmd=_cmd_array, upgrade_deps=True, prompt="ZoMi_Client"
     )
+    test_msg(f"Creating VENV in {venv_dir}")
     try:
         _venv.create(venv_dir)
     except FileNotFoundError as e:
-        logger.warning(f"Issue while creating VENV: {e}")
+        if not testing:
+            logger.warning(f"Issue while creating VENV: {e}")
+    except Exception as e:
+        logger.error(f"Failed to create VENV: {e}")
 
     _f: Path = data_dir / "bin/eventproc.py"
     test_msg(
