@@ -63,3 +63,6 @@ The [install script](examples/install.py) will install the client for you. It wi
 You can supply the script with options to configure the install. Below is a list of the options and their defaults.
 
 ## Install Script Options
+
+- `--debug` : Enable debug logging
+- 
