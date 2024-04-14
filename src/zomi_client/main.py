@@ -99,7 +99,7 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.NullHandler())
 
 g: Optional[GlobalConfig] = None
-LP: str = "Client::"
+LP: str = "Client:"
 
 
 def set_logger(l: logging.Logger) -> None:
@@ -240,9 +240,10 @@ def parse_client_config_file(
             substitutions = testing.substitutions
 
     logger.debug(f"Replacing ${{VARS}} in config:substitutions")
-    substitutions = _replace_vars(str(substitutions), substitutions)
-    substitutions = _replace_vars(str(substitutions), substitutions)
-    substitutions = _replace_vars(str(substitutions), substitutions)
+    for x in range(3):
+        substitutions = _replace_vars(str(substitutions), substitutions)
+
+    # secrets
     if inc_file := substitutions.get("IncludeFile"):
         inc_file = Path(inc_file)
         logger.debug(f"PARSING IncludeFile: {inc_file.as_posix()}")
@@ -533,7 +534,7 @@ class ZMClient:
             _msg = "ZoneMinder is not installed, the client requires to be installed on a ZoneMinder host!"
             logger.error(_msg)
             raise RuntimeError(_msg)
-        lp = f"{LP}init::"
+        lp = f"{LP}init:"
 
         # setup async signal catcher
         loop = asyncio.get_event_loop()
