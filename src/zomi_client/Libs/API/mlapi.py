@@ -194,8 +194,8 @@ class MLAPI:
         mp.add_field("images", images, content_type="multipart/form-data")
         mp.add_field("model_hints", hints, content_type="multipart/form-data")
         logger.debug(
-            f"{lp} sending data to 'Machine Learning API' ['{self.name}' @ "
-            f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}]"
+            f"{lp} sending data to '{self.name}' @ "
+            f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}"
         )
         _perf = time.time()
         r: aiohttp.ClientResponse
