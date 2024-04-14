@@ -1,3 +1,5 @@
+#!/opt/zomi/client/venv/bin/python3
+
 from __future__ import annotations
 
 import logging.handlers
@@ -102,7 +104,7 @@ async def main():
     _mode = ""
     _start = time.time()
     # Do all the config stuff and setup logging
-    lp = f"eventstart::" if args.event_start else f"eventend::"
+    lp = f"eventstart:" if args.event_start else f"eventend:"
     eid = args.eid
     mid = args.mid
     event_start = args.event_start
@@ -115,7 +117,6 @@ async def main():
             sys.exit(1)
 
     if "config" in args and args.config:
-        # logger.info(f"Configuration file supplied as: {args.config}")
         cfg_file = args.config
     else:
         logger.warning(
@@ -128,7 +129,7 @@ async def main():
     assert cfg_file, "No config file supplied via CLI or ENV"
     g.config_file = cfg_file
     logger.info(
-        f"{lp} Event: {args.event} [Event ID: {eid}] ||"
+        f"{lp} Event: {args.event} [Event ID: {eid}]"
         f"{' || Monitor ID: ' if mid else ''}{mid if mid else ''} || "
         f"Config File: {cfg_file}"
     )

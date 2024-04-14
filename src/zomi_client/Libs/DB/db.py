@@ -281,7 +281,7 @@ class ZMDB:
                 if g and g.config:
                     if g.config.zoneminder.db:
                         cfg_file_db = getattr(g.config.zoneminder.db, _attr)
-                        if cfg_file_db:
+                        if cfg_file_db is not None:
                             # todo: what if we want it to be an empty string? or int(0)
                             # There is an entry in the config file, use it even if ENV or .conf files set it
                             set_to = cfg_file_db
