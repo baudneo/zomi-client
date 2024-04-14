@@ -19,7 +19,6 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
 
 
          """
-        # only flush if a file_handler is set
         file_handler: Optional[logging.FileHandler] = kwargs.get("file_handler")
         if len(self.buffer) > 0:
             if file_handler is not None and isinstance(file_handler, logging.FileHandler):
@@ -38,9 +37,10 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
                     self.buffer.clear()
                 finally:
                     self.release()
-            elif file_handler is None:
-                # flush to stdout
-                for record in self.buffer:
-                    print(record.getMessage())
-                self.buffer.clear()
+            # elif file_handler is None:
+            #     # flush to stdout
+            #     for record in self.buffer:
+            #         print(record.getMessage())
+            #         print("PRINTED OUT DUE TO NO FILE HANDLER TO FLUSH TO!")
+            #     self.buffer.clear()
 
