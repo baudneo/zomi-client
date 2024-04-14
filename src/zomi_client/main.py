@@ -223,12 +223,12 @@ def parse_client_config_file(
 
     try:
         cfg = yaml.safe_load(raw_config)
-    except yaml.YAMLError:
+    except yaml.YAMLError as yaml_exc:
         logger.error(f"Error parsing the YAML configuration file!")
-        raise
-    except PermissionError:
+        raise yaml_exc
+    except PermissionError as perm_exc:
         logger.error(f"Error reading the YAML configuration file!")
-        raise
+        raise perm_exc
 
     substitutions = cfg.get("substitutions", {})
     testing = cfg.get("testing", {})
