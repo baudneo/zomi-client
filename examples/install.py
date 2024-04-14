@@ -1039,6 +1039,7 @@ def do_install():
 class Envsubst:
     strict: bool
     env: Optional[Dict]
+    lp: str = "envsubst:"
 
     def __init__(self):
         """
@@ -1073,18 +1074,17 @@ class Envsubst:
         if search_string is None:
             return ""
         if not isinstance(search_string, str):
-            logger.warning(f"envsubst:: search_string is not a string: {type(search_string)}. Converting to str.")
+            logger.warning(f"{self.lp} search_string is not a string: {type(search_string)}. Converting to str.")
             search_string = str(search_string)
         self.strict = strict
         if strict:
-            logger.info(f"envsubst:: strict mode: {self.strict}")
+            logger.info(f"{self.lp} strict mode: {self.strict}")
         if env:
             self.env = env
         # handle simple un-bracketed env vars like $FOO
         a: str = _simple_re.sub(self._repl_simple_env_var, search_string)
-        logger.debug(f"envsubst DBG>>> after simple sub {type(a) = }")
         if not isinstance(a, str):
-            logger.warning(f"{lp} AFTER simple regex replacement, output is not a string: {type(a)}. Converting to str.")
+            logger.warning(f"{self.lp} AFTER simple regex replacement, output is not a string: {type(a)}. Converting to str.")
             a = str(a)
         # handle bracketed env vars with optional default specification
         b: str = _extended_re.sub(self._repl_extended_env_var, a)
