@@ -85,7 +85,7 @@ zoneminder:
 
   # - How to grab images from ZM
   pull_method:
-    # - ZMS is the CGI app that comes with ZM. It is the fastest way to grab images from ZM.
+    # - ZMS is the CGI app that comes with ZM. It is the fastest way to grab LIVE images from ZM.
     zms:
       enabled: yes
       # - The complete URL to zms cgi script (i.e.: https://zm.example.com/zm/cgi-bin/nph-zms)
@@ -93,10 +93,10 @@ zoneminder:
       #url:
       # - Timeout in seconds for image grab request
       timeout: 15
-      # - Only grab a maximum of x frames
+      # - Only grab a maximum of x frames per 'event'
       max_frames: 10
       # - Seconds Between frames (1 = 1 fps, 0.5 = 2 fps, 0.25 = 4 fps, etc.)
-      # 1 is default and recommended unless it is a time lapse camera
+      # 1 is default and recommended unless it is a time-lapse camera
       sbf: 1
 
       # - Attempts and Delays are only used if the event is a past event
@@ -455,8 +455,9 @@ detection_settings:
   models:
     # - Models to run on all monitors
     # - NOTE: You can override these settings per monitor in monitors: section
-    yolo-nas-l ort:
-    yolov8x ort:
+    # !!!!!! notice the trailing colon in the model name!!!!!
+    yolov4:
+    yolov7:
 
   # - Import zones that have been defined in ZM Web GUI
   import_zones: yes
@@ -541,7 +542,7 @@ label_groups:
 
 
 matching:
-  # - Can use: first, most, most_unique, union[WIP]
+  # - Can use: first, most, most_unique
   # - Tiebreakers will use the SUM of confidences for the model
   # - The strategy is in relation to the 'event' its processing and is only defined on a global level.
   # -- first: break out of the detection loop on the very first filtered detection
@@ -562,7 +563,7 @@ matching:
     # - If labels is not configured, it will apply to all labels (which is probably not wanted)
     labels:
       # - The label of the object to check for (label_groups supported)
-      - vehicles
+#      - vehicles
 
   # - Filtering is done on the results returned by the ML server (if any).
   filters:
@@ -570,7 +571,7 @@ matching:
     # - The type_of the model is set in the server config file
     object:
       min_conf: 0.42
-      pattern: "(DEFAULT PATTERN|car|truck|bus|person|dog|cat)"
+      pattern: "(car|truck|bus|person|dog|cat)"
       total_max_area: 100%
       total_min_area: 1px
 
@@ -599,9 +600,9 @@ monitors:
   # *** Examples ***
   999999999901:  # Monitor ID from ZM
     # - Override global models for this monitor
-    # - These model names are defined in the zomi server config
+    # - These model names are defined in the ML server config
     models:
-      # - names are lower cased but, spaces are preserved
+      # - names are lower cased, spaces are preserved
       yolov4:
         enabled: yes  # Default and implied. Can be omitted.
       yolov4 tiny:
@@ -611,7 +612,7 @@ monitors:
       yolov7x:
         enabled: no
 
-    # - Monitor static objects overrides
+    # - static objects overrides
     static_objects:
       enabled: yes
       # - Difference in area between current and previous detection
@@ -625,7 +626,7 @@ monitors:
     # - Monitor label filter overrides
     filters:
       object:
-        pattern: "(MON_LEVEL_OVERRIDE|person|dog|cat|han_solo)"
+        pattern: "(person|dog|cat|han_solo)"
         # - Per label filtering (label_groups supported)
         labels:
           person:
@@ -686,7 +687,7 @@ monitors:
           # - Zone level filters overrides
           filters:
             object:
-              pattern: "(TEST_MON_1_ZONE_LEVEL|person|dog|cat|chewbacca)"
+              pattern: "(person|dog|cat|chewbacca)"
               # - Per label filtering (label_groups supported)
               labels:
                 person:
