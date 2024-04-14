@@ -331,8 +331,8 @@ class MLNotificationSettings(BaseModel):
             emergency: Optional[str] = Field("/emergency.json")
 
         enabled: Optional[bool] = Field(False)
-        token: str = Field(...)
-        key: str = Field(...)
+        token: Optional[str] = None
+        key: Optional[str] = None
         animation: Optional[SendAnimations] = Field(default_factory=SendAnimations)
         sounds: Optional[Dict[str, str]] = Field(default_factory=dict)
         cooldown: Optional[CoolDownSettings] = Field(default_factory=CoolDownSettings)
