@@ -1345,7 +1345,7 @@ if __name__ == "__main__":
     args.config_dir = cfg_dir = cfg_dir.expanduser().resolve()
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
-    ml_user, ml_group = args.ml_user or "imoz", args.ml_group or "zomi"
+    ml_user, ml_group = args.ml_user, args.ml_group
     do_web_user()
     if not ml_user:
         logger.error(
