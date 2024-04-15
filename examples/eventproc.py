@@ -16,7 +16,7 @@ try:
 except ImportError:
     zomi_client = None
     print("ZoMi Client library not installed! Please install zomi-client!")
-    sys.exit(1)
+    raise ImportError("ZoMi Client library not installed! Please install zomi-client!")
 
 from zomi_client.Models.validators import str2path
 from zomi_client.Models.config import ClientEnvVars, GlobalConfig
