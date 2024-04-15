@@ -16,9 +16,6 @@ import re
 import os
 import sys
 
-_simple_re: Pattern = re.compile(r"(?<!\\)\$([A-Za-z0-9_]+)")
-_extended_re: Pattern = re.compile(r"(?<!\\)\$\{([A-Za-z0-9_]+)((:?-)([^}]+))?}")
-
 # Change these if you want to install to a different default location
 # You can also specify these locations via CLI
 DEFAULT_DATA_DIR = "/opt/zomi/client"
@@ -31,11 +28,13 @@ DEFAULT_IMG_DIR = f"{DEFAULT_DATA_DIR}/images"
 DEFAULT_SYSTEM_CREATE_PERMISSIONS = 0o755
 # config files will have their permissions adjusted to this
 DEFAULT_CONFIG_CREATE_PERMISSIONS = 0o755
-# default ML models to install (SEE: available_models{})
 REPO_BASE = Path(__file__).parent.parent
 EXAMPLES_DIR = Path(__file__).parent
 _ENV = {}
 THREADS: Dict[str, Thread] = {}
+FORBIDDEN_DESTS = ('/*', '/')
+_simple_re: Pattern = re.compile(r"(?<!\\)\$([A-Za-z0-9_]+)")
+_extended_re: Pattern = re.compile(r"(?<!\\)\$\{([A-Za-z0-9_]+)((:?-)([^}]+))?}")
 
 # Logging
 logger = logging.getLogger("install_client")
@@ -524,7 +523,7 @@ def download_file(url: str, dest: Path, user: str, group: str, mode: int):
     _mess_ = (
         f"Downloading {url}..."
         if not testing
-        else f"TESTING if file exists at :: {url}..."
+        else f"TESTING if file exists at -> {url}..."
     )
     logger.info(_mess_)
 
@@ -589,7 +588,11 @@ def copy_file(src: Path, dest: Path, user: str, group: str, mode: int):
 
         if dest.exists():
             logger.warning(f"File {dest} already exists, removing...")
-            dest.unlink()
+
+            if dest not in FORBIDDEN_DESTS:
+                dest.unlink()
+            else:
+                raise ValueError(f"Invalid destination file: {dest}")
 
         logger.info(__msg)
         shutil.copy(src, dest)
@@ -990,13 +993,19 @@ def do_install():
             logger.warning(
                 f"{_dest_esc} already exists, unlinking and sym-linking again..."
             )
-            _dest_esc.unlink()
+            if _dest_esc not in FORBIDDEN_DESTS:
+                _dest_esc.unlink()
+            else:
+                raise ValueError(f"Invalid destination file: {_dest_esc}")
         _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
         if _dest_ep.exists():
             logger.warning(
                 f"{_dest_ep} already exists, unlinking and sym-linking again..."
             )
-            _dest_ep.unlink()
+            if _dest_ep not in FORBIDDEN_DESTS:
+                _dest_ep.unlink()
+            else:
+                raise ValueError(f"Invalid destination file: {_dest_ep}")
         _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
 
     _src: str = (
