@@ -414,43 +414,43 @@ def show_config(cli_args: argparse.Namespace):
 
 
 def do_web_user():
-    global ml_user, ml_group
+    global install_as_user, install_as_group
     _group = None
-    if not ml_user or not ml_group:
-        if not ml_user:
+    if not install_as_user or not install_as_group:
+        if not install_as_user:
             if interactive:
-                ml_user = input("Web server username [Leave blank to try auto-find]: ")
-                if not ml_user:
-                    ml_user, _group = get_web_user()
-                    logger.info(f"Web server user auto-find: {ml_user}")
+                install_as_user = input("Web server username [Leave blank to try auto-find]: ")
+                if not install_as_user:
+                    install_as_user, _group = get_web_user()
+                    logger.info(f"Web server user auto-find: {install_as_user}")
             else:
-                ml_user, _group = get_web_user()
-                logger.info(f"Web server user auto-find: {ml_user}")
+                install_as_user, _group = get_web_user()
+                logger.info(f"Web server user auto-find: {install_as_user}")
 
-        if not ml_group:
+        if not install_as_group:
             if interactive:
-                ml_group = input("Web server group [Leave blank to try auto-find]: ")
-                if not ml_group:
+                install_as_group = input("Web server group [Leave blank to try auto-find]: ")
+                if not install_as_group:
                     if _group:
-                        ml_group = _group
+                        install_as_group = _group
                     else:
-                        _, ml_group = get_web_user()
-                    logger.info(f"Web server group auto-find: {ml_group}")
+                        _, install_as_group = get_web_user()
+                    logger.info(f"Web server group auto-find: {install_as_group}")
 
             else:
                 if _group:
-                    ml_group = _group
+                    install_as_group = _group
                 else:
-                    _, ml_group = get_web_user()
-                logger.info(f"Web server group auto-find: {ml_group}")
+                    _, install_as_group = get_web_user()
+                logger.info(f"Web server group auto-find: {install_as_group}")
 
-    if not ml_user or not ml_group:
+    if not install_as_user or not install_as_group:
         _missing = ""
         _u = "user [--user]"
         _g = "group [--group]"
-        if not ml_user and ml_group:
+        if not install_as_user and install_as_group:
             _missing = _u
-        elif ml_user and not ml_group:
+        elif install_as_user and not install_as_group:
             _missing = _g
         else:
             _missing = f"{_u} and {_g}"
@@ -504,10 +504,10 @@ def install_dirs(
             if x.strip().casefold() == "n":
                 logger.error(f"{dir_type} directory does not exist, exiting...")
                 sys.exit(1)
-            create_dir(dest_dir, ml_user, ml_group, perms)
+            create_dir(dest_dir, install_as_user, install_as_group, perms)
         else:
             test_msg(f"Creating {dir_type} directory...")
-            create_dir(dest_dir, ml_user, ml_group, perms)
+            create_dir(dest_dir, install_as_user, install_as_group, perms)
     else:
         logger.warning(f"{dir_type} directory {dest_dir} already exists!")
     # create sub-folders
@@ -517,7 +517,7 @@ def install_dirs(
         )
         for _sub in sub_dirs:
             _path = dest_dir / _sub
-            create_dir(_path, ml_user, ml_group, perms)
+            create_dir(_path, install_as_user, install_as_group, perms)
 
 
 def download_file(url: str, dest: Path, user: str, group: str, mode: int):
@@ -905,13 +905,13 @@ def check_backup(_inst_type: str) -> None:
                 f"Backing up existing {_inst_type} config file: {_target} to {file_backup}"
             )
             # Backup existing
-            copy_file(_target, file_backup, ml_user, ml_group, cfg_create_mode)
+            copy_file(_target, file_backup, install_as_user, install_as_group, cfg_create_mode)
             # install new
             copy_file(
                 REPO_BASE / f"configs/example_{_inst_type}.yml",
                 cfg_dir / f"{_inst_type}.yml",
-                ml_user,
-                ml_group,
+                install_as_user,
+                install_as_group,
                 cfg_create_mode,
             )
     else:
@@ -923,8 +923,8 @@ def check_backup(_inst_type: str) -> None:
             copy_file(
                 REPO_BASE / f"configs/example_{_inst_type}.yml",
                 cfg_dir / f"{_inst_type}.yml",
-                ml_user,
-                ml_group,
+                install_as_user,
+                install_as_group,
                 cfg_create_mode,
             )
         else:
@@ -960,16 +960,16 @@ def do_install():
     copy_file(
         EXAMPLES_DIR / "EventStartCommand.sh",
         data_dir / "bin/EventStartCommand.sh",
-        ml_user,
-        ml_group,
+        install_as_user,
+        install_as_group,
         cfg_create_mode,
     )
 
     copy_file(
         EXAMPLES_DIR / "eventproc.py",
         data_dir / "bin/eventproc.py",
-        ml_user,
-        ml_group,
+        install_as_user,
+        install_as_group,
         cfg_create_mode,
     )
 
@@ -1345,15 +1345,15 @@ if __name__ == "__main__":
     args.config_dir = cfg_dir = cfg_dir.expanduser().resolve()
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
-    ml_user, ml_group = args.ml_user, args.ml_group
+    install_as_user, install_as_group = args.ml_user or "", args.ml_group or ""
     do_web_user()
-    if not ml_user:
+    if not install_as_user:
         logger.error(
             "user not specified/cant be computed (try to specify user and group), exiting..."
         )
         sys.exit(1)
-    args.ml_user = ml_user
-    args.ml_group = ml_group
+    args.ml_user = install_as_user
+    args.ml_group = install_as_group
 
     show_config(args)
 
