@@ -92,6 +92,7 @@ def _parse_cli():
         help="This is a live event",
         action="store_true",
         dest="live",
+
     )
 
     args = parser.parse_args()

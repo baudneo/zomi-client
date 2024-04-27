@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import namedtuple
+import warnings
 from configparser import ConfigParser, SectionProxy
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional, Union, Tuple, TYPE_CHECKING, Any, Dict, List, NamedTuple
-import warnings
 
 from pydantic import SecretStr
 
@@ -466,7 +465,7 @@ class ZMDB:
 
         :return:
         """
-        from ...Models.config import ZoneMinderSettings, MonitorsSettings
+        from ...Models.config import MonitorsSettings
 
         imported_zones: List = []
         lp: str = f"{LP}import zones::"

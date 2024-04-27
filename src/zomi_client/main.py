@@ -39,7 +39,6 @@ try:
     from pydantic import BaseModel, Field
     from shapely.geometry import Polygon
 except ImportError as e:
-    # Figure out what the fuck is going on, fucking piece of shit goof
     msg = (
         f"Some dependencies are not installed. Please install them to enable "
         f"all features. {e}"
@@ -102,15 +101,15 @@ g: Optional[GlobalConfig] = None
 LP: str = "Client:"
 
 
-def set_logger(l: logging.Logger) -> None:
+def set_logger(supplied_logger: logging.Logger) -> None:
     global logger
     if logger is not None:
         if isinstance(logger, logging.Logger):
             logger.info(
-                f"{LP} CHANGING LOGGERS! Current: '{logger.name}' - Setting logger to {l.name}"
+                f"{LP} CHANGING LOGGERS! Current: '{logger.name}' - Setting logger to {supplied_logger.name}"
             )
-    logger = l
-    logger.info(f"{LP} logger has been changed to {logger.name}")
+            logger = supplied_logger
+            logger.info(f"{LP} logger has been changed to {logger.name}")
 
 
 def create_logs() -> logging.Logger:
@@ -146,7 +145,7 @@ async def init_logs(config: ConfigFileModel) -> None:
     if cfg.console.enabled is False:
         for h in logger.handlers:
             if isinstance(h, logging.StreamHandler):
-                logger.info(f"Removing console log output!")
+                logger.info("Removing console log output!")
                 logger.removeHandler(h)
 
     if cfg.file.enabled:
