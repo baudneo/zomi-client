@@ -78,7 +78,7 @@ def _parse_cli():
         "--monitor-id",
         "--mid",
         "-m",
-        help="Monitor ID to process (Required for --shm)",
+        help="Monitor ID to process",
         type=int,
         dest="mid",
         default=0,
@@ -172,4 +172,4 @@ if __name__ == "__main__":
     loop.run_until_complete(zm_client.clean_up())
     if not loop.is_closed():
         loop.close()
-    logger.info(f"perf::FINAL:: MID={g.mid} Total: {time.time() - _start:.5f} seconds")
+    logger.info(f"perf:FINAL: MID={g.mid} Total: {time.time() - _start:.5f} seconds")
