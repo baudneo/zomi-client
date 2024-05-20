@@ -1,5 +1,7 @@
 # Strategy
 
+This is a WIP and not implemented yet.
+
 There are a few strategies for matching. A matching object will need to be detected and then pass through filtering 
 (confidence, name of object, location/area of object, etc.)
 
@@ -7,7 +9,7 @@ There are a few strategies for matching. A matching object will need to be detec
 ## Fast
 These strategies are fast but may not give you all the information you need. You will get 1 notification ASAP.
 
-### `fast`
+### `fast` 
 *Will only ever return one object.*
 
 This is the fastest strategy but, you may miss some information. As soon as a detected object makes it through filtering, no more processing occurs. The image and object are returned. 
