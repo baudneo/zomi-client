@@ -10,15 +10,8 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
     def shouldFlush(self, record: logging.LogRecord) -> bool:
         return False
 
-
     def flush(self, *args, **kwargs):
-        """
-        Override flush to do nothing unless a file_handler kwarg is supplied.
-
-        UPDATE: need to flush to stdout
-
-
-         """
+        """Override flush to do nothing unless a file_handler kwarg is supplied."""
         file_handler: Optional[logging.FileHandler] = kwargs.get("file_handler")
         if len(self.buffer) > 0:
             if file_handler is not None and isinstance(file_handler, logging.FileHandler):
@@ -37,10 +30,25 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
                     self.buffer.clear()
                 finally:
                     self.release()
-            # elif file_handler is None:
-            #     # flush to stdout
-            #     for record in self.buffer:
-            #         print(record.getMessage())
-            #         print("PRINTED OUT DUE TO NO FILE HANDLER TO FLUSH TO!")
-            #     self.buffer.clear()
 
+    def flush2(self, *args, **kwargs):
+        """
+        Only print to stdout if there is no file handler to flush to
+
+        UPDATE: need to flush to stdout
+        """
+        from . import CLIENT_LOGGER_NAME
+
+        has_fh = False
+        handlers = logging.getLogger(CLIENT_LOGGER_NAME).handlers
+        for _handler in handlers:
+            if isinstance(_handler, logging.FileHandler):
+                has_fh = True
+        if not has_fh:
+            msg = "No file handler to flush to, printing to stdout. This should help with errors on startup."
+            print(msg)
+            # flush to stdout
+            for record in self.buffer:
+                print(record.getMessage())
+            print(msg)
+            self.buffer.clear()
