@@ -73,7 +73,7 @@ class MQTT(CoolDownBase):
         logger.debug(f"{LP}on_publish: message_id: {mid = }")
 
     def _on_connect(self, client: paho_client.Client, userdata, flags, rc):
-        lp = f"{LP}on_connect: "
+        lp = f"{LP}on_connect:"
         if rc == 0:
             logger.debug(f"{lp} connected to broker with flags-> {flags}")
             self._connected = True
