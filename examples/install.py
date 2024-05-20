@@ -851,6 +851,7 @@ def install_host_dependencies(_type: str):
 
 
 def main():
+    # create base dir and sub dirs
     install_dirs(
         data_dir,
         DEFAULT_DATA_DIR,
@@ -864,6 +865,7 @@ def main():
             "misc",
         ],
     )
+    # create facial data parent and sub dirs.
     install_dirs(
         Path(f"{DEFAULT_DATA_DIR}/face_data"),
         f"{DEFAULT_DATA_DIR}/face_data",
@@ -871,12 +873,14 @@ def main():
         sub_dirs=["known", "unknown"],
         perms=0o777,
     )
+    # config file and logging dirs
     install_dirs(
         cfg_dir, DEFAULT_CONFIG_DIR, "Config", sub_dirs=[], perms=cfg_create_mode
     )
     install_dirs(log_dir, DEFAULT_LOG_DIR, "Log", sub_dirs=[], perms=0o777)
-
+    # backup existing config files if this is a re-install
     check_backup("secrets")
+    # rock n roll
     do_install()
 
 
@@ -980,7 +984,7 @@ def do_install():
     # so that they can be called from anywhere
     test_msg(
         f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zomi-ESC "
-        f"(shell helper) zomi-eventproc (python script)",
+        f"(shell helper) and zomi-eventproc (python script)",
         "info",
     )
     if not testing:
@@ -996,7 +1000,7 @@ def do_install():
             if _dest_esc not in FORBIDDEN_DESTS:
                 _dest_esc.unlink()
             else:
-                raise ValueError(f"Invalid destination file: {_dest_esc}")
+                raise ValueError(f"Invalid destination file: {_dest_esc} - Please delete the existing file yourself!")
         _dest_esc.symlink_to(f"{data_dir}/bin/EventStartCommand.sh")
         if _dest_ep.exists():
             logger.warning(
@@ -1005,7 +1009,7 @@ def do_install():
             if _dest_ep not in FORBIDDEN_DESTS:
                 _dest_ep.unlink()
             else:
-                raise ValueError(f"Invalid destination file: {_dest_ep}")
+                raise ValueError(f"Invalid destination file: {_dest_ep} - Please delete the existing file yourself!")
         _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
 
     _src: str = (
@@ -1036,10 +1040,9 @@ def do_install():
         f"Modifying {_f.as_posix()} to use VENV {_venv.context.env_exec_cmd} shebang"
     )
     if not testing:
-        content: Optional[str] = None
         if not _f.is_absolute():
             _f = _f.expanduser().resolve()
-        content = _f.read_text()
+        content: Optional[str] = _f.read_text() or None
         with _f.open("w+") as f:
             f.write(f"#!{_venv.context.env_exec_cmd}\n{content}")
         del content

@@ -615,7 +615,7 @@ class ZMClient:
 
     def _init_api(self):
         g.api = self.api = ZMAPI(g.config.zoneminder)
-        logger.debug(f"API initialized")
+        logger.debug("API initialized")
         self.notifications = Notifications()
 
     @staticmethod
@@ -636,7 +636,7 @@ class ZMClient:
         filters_1: Union[Dict, MatchFilters, OverRideMatchFilters],
         filters_2: Union[Dict, OverRideMatchFilters],
     ):
-        lp: str = "combine filters::"
+        lp: str = "combine filters:"
         # logger.debug(f"{lp} BASE filters [type: {type(filters_1)}]: {filters_1}")
         # logger.debug(f"{lp} OVERRIDE filters [type: {type(filters_2)}]: {filters_2}")
         if isinstance(filters_1, (MatchFilters, OverRideMatchFilters)):
@@ -787,32 +787,36 @@ class ZMClient:
         models: Optional[Dict] = None
         self.static_objects.pickle()
         create_default_zone: bool = True
+        # If no ML zones are set up in the config file by the user, create a default zone of the whole image
         if "create_default_full_image_zone" in self.config.monitors:
             temp_var = self.config.monitors.pop("create_default_full_image_zone", None)
             if temp_var is not None:
                 create_default_zone = str2bool(temp_var)
-
+        # check for zones and assign them
         if g.mid in self.config.monitors:
             if self.config.monitors[g.mid].zones:
                 self.zones = self.config.monitors[g.mid].zones
+            # check if the monitor config has models defined, if so, override the global config
             if self.config.monitors[g.mid].models:
                 logger.debug(
                     f"{lp} Monitor {g.mid} has models configured, overriding global models"
                 )
                 models = self.config.monitors[g.mid].models
         else:
+            # There is absolutely no ML config defined for this monitor, ML will never run.
             logger.critical(f"{lp} Monitor {g.mid} not found in monitors: section!")
+        # make sure we have some models defeined to run on.
         if not models:
             if self.config.detection_settings.models:
                 logger.debug(
                     f"{lp} Monitor {g.mid} has NO config entry for MODELS, using global "
-                    f"models from detection_settings"
+                    f"models from detection_settings:"
                 )
                 models = self.config.detection_settings.models
             else:
                 logger.debug(
                     f"{lp} Monitor {g.mid} has NO config entry for MODELS and global "
-                    f"models from detection_settings is empty using 'yolov4'"
+                    f"models from detection_settings is empty, defaulting to 'yolov4'"
                 )
                 models = {"yolov4": {}}
         _start_detections = time.time()
@@ -1046,6 +1050,15 @@ class ZMClient:
 
             img_time = time.time() - image_start
             img_msg = f"perf:{LP} IMAGE #{image_loop} took {img_time:.5f} seconds"
+            if strategy == MatchStrategy.first and matched_l:
+                logger.debug(
+                    f"Strategy is 'first' and there is a filtered match, breaking out of IMAGE loop {image_loop}"
+                )
+                logger.debug(
+                    img_msg
+                )
+                break
+
             if not g.past_event and img_time < 1.0:
                 remaining = 1.0 - img_time
                 img_msg = (
@@ -1139,7 +1152,7 @@ class ZMClient:
         *args,
         **kwargs,
     ) -> List[Result]:
-        """Filter detections using 2 loops, first loop is filter by object label, second loop is to filter by zone."""
+        """Filter detections using a loop within a loop, outer loop is filter by object label, inner loop is to filter by zone."""
 
         zones = self.zones.copy()
         zone_filters = self.zone_filters
