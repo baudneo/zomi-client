@@ -15,8 +15,12 @@ try:
     import zomi_client
 except ImportError:
     zomi_client = None
-    print("ZoMi Client library not installed! Please install zomi-client!")
-    raise ImportError("ZoMi Client library not installed! Please install zomi-client!")
+    import_err_msg = (
+        "ZoMi Client library not installed! Please install zomi-client: "
+        "https://github.com/baudneo/zomi-client"
+    )
+    print(import_err_msg)
+    raise ImportError(import_err_msg)
 
 from zomi_client.Models.validators import str2path
 from zomi_client.Models.config import ClientEnvVars, GlobalConfig
@@ -105,7 +109,7 @@ async def main():
     _mode = ""
     _start = time.time()
     # Do all the config stuff and setup logging
-    lp = f"eventstart:" if args.event_start else f"eventend:"
+    lp = f"event-start:" if args.event_start else f"event-end:"
     eid = args.eid
     mid = args.mid
     event_start = args.event_start
@@ -147,7 +151,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    # file name
     filename = Path(__file__).stem
     args = _parse_cli()
     logger.debug(f"Starting {filename}...")
@@ -165,11 +168,12 @@ if __name__ == "__main__":
         from zomi_client import Log
         for handler in logger.handlers:
             if isinstance(handler, Log.BufferedLogHandler):
-                handler.flush()
+                # should only print out if there is no file logging going on
+                handler.flush2()
     # Allow 250ms for aiohttp SSL session context to close properly
     # loop.run_until_complete(asyncio.sleep(0.25))
-    logger.debug(f"DETECTIONS FROM loop: {detections}")
+    logger.debug(f"DETECTIONS: {detections}")
     loop.run_until_complete(zm_client.clean_up())
+    logger.info(f"perf:FINAL:MID {g.mid}: Event processing took {time.time() - _start:.5f} seconds")
     if not loop.is_closed():
         loop.close()
-    logger.info(f"perf:FINAL: MID={g.mid} Total: {time.time() - _start:.5f} seconds")
