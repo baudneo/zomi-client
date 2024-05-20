@@ -405,9 +405,11 @@ class ZMSImagePipeLine(PipeLine):
 
             for image_grab_attempt in range(self.max_attempts):
                 image_grab_attempt += 1
+                past_or_live = "past" if g.past_event else "live"
+                pol2 = "event data" if g.past_event else "frame buffer"
                 logger.debug(
-                    f"{lp} attempt #{image_grab_attempt}/{self.max_attempts} to grab live image from mid: "
-                    f"{g.mid} frame buffer"
+                    f"{lp} attempt #{image_grab_attempt}/{self.max_attempts} to grab {past_or_live} image from mid: "
+                    f"{g.mid} {pol2}"
                 )
                 api_response = await g.api.make_async_request(
                     url=url, type_action="post", timeout=timeout
