@@ -93,7 +93,7 @@ class Gotify(CoolDownBase):
             data = {
                 "title": self.title,
                 "message": markdown_formatted_msg,
-                "priority": 100,
+                "priority": 4,
                 "extras": {
                     "client::display": {"contentType": "text/markdown"},
                     "client::notification": {
