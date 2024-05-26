@@ -55,7 +55,7 @@ __doc__ = """Install ZoMi Machine Learning Client - Custom"""
 tst_msg_wrap = "[testing!!]", "[will not actually execute]"
 
 
-# parse .env file using pyenv
+# parse .env file using python-dotenv
 def parse_env_file(env_file: Path) -> None:
     """Parse .env file using python-dotenv.
 
@@ -148,7 +148,7 @@ def get_web_user() -> Tuple[Optional[str], Optional[str]]:
     if len(hits) > 1:
         import pwd
 
-        # sort by uid high to low
+        # sort by uid high to low (only use root if we have to)
         hits = sorted(hits, key=lambda x: pwd.getpwnam(x[0]).pw_uid, reverse=True)
         logger.warning(
             f"Multiple web server processes found ({proc_names}) - The list is sorted to account "
@@ -166,6 +166,29 @@ def parse_cli():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mlapi-user", help="API user", type=str, default=None, dest="api_user")
     parser.add_argument("--mlapi-pass", help="API password", type=str, default=None, dest="api_pass")
+    parser.add_argument(
+        "--route-name", "--mlapi-name",
+        dest="route_name",
+        default=None,
+        type=str,
+        help="MLAPI route name [Optional]",
+    )
+    # address and port as well as the route name
+    parser.add_argument(
+        "--route-host", "--mlapi-host",
+        dest="route_host",
+        default=None,
+        type=str,
+        help="MLAPI host address [Optional]",
+    )
+    parser.add_argument(
+        "--route-port", "--mlapi-port",
+        dest="route_port",
+        default=None,
+        type=str,
+        help="MLAPI host port [Optional]",
+    )
+
     parser.add_argument(
         "--no-cache-dir",
         action="store_true",
@@ -191,7 +214,7 @@ def parse_cli():
         dest="zm_api",
         default=None,
         type=str,
-        help="ZoneMinder API URL, If this is omited and --zm-portal "
+        help="ZoneMinder API URL, If this is omitted and --zm-portal "
         "is specified, the API URL will be derived from the portal URL (--zm-portal + '/api')",
     )
     parser.add_argument(
@@ -208,28 +231,7 @@ def parse_cli():
         type=str,
         help="ZoneMinder API password [Optional]",
     )
-    parser.add_argument(
-        "--route-name",
-        dest="route_name",
-        default=None,
-        type=str,
-        help="MLAPI route name [Optional]",
-    )
-    # address and port as well as the route name
-    parser.add_argument(
-        "--route-host",
-        dest="route_host",
-        default=None,
-        type=str,
-        help="MLAPI host address [Optional]",
-    )
-    parser.add_argument(
-        "--route-port",
-        dest="route_port",
-        default=None,
-        type=str,
-        help="MLAPI host port [Optional]",
-    )
+
 
     parser.add_argument(
         "--config-only",
@@ -263,18 +265,18 @@ def parse_cli():
         "--env-file", type=Path, help="Path to .env file (requires python-dotenv)"
     )
     parser.add_argument(
-        "--dir-config",
-        help=f"Directory where config files are held Default: {DEFAULT_CONFIG_DIR}",
-        default=DEFAULT_CONFIG_DIR,
-        type=Path,
-        dest="config_dir",
-    )
-    parser.add_argument(
         "--dir-data",
         help=f"Directory where variable data is held Default: {DEFAULT_DATA_DIR}",
         dest="data_dir",
         default=DEFAULT_DATA_DIR,
         type=Path,
+    )
+    parser.add_argument(
+        "--dir-config",
+        help=f"Directory where config files are held Default: {DEFAULT_CONFIG_DIR}",
+        default=DEFAULT_CONFIG_DIR,
+        type=Path,
+        dest="config_dir",
     )
     parser.add_argument(
         "--dir-model",
@@ -310,7 +312,7 @@ def parse_cli():
         "--user",
         "-U",
         help="User to install as [leave empty to auto-detect what user runs "
-        "the web server] (Change if installing server on a remote host)",
+        "the web server]",
         type=str,
         dest="ml_user",
         default="",
@@ -319,7 +321,7 @@ def parse_cli():
         "--group",
         "-G",
         help="Group member to install as [leave empty to auto-detect what "
-        "group member runs the web server] (Change if installing server on a remote host)",
+        "group member runs the web server]",
         type=str,
         dest="ml_group",
         default="",
@@ -339,13 +341,13 @@ def parse_cli():
 
     parser.add_argument(
         "--system-create-permissions",
-        help=f"ZM ML system octal [0o] file permissions [Default: {oct(DEFAULT_SYSTEM_CREATE_PERMISSIONS)}]",
+        help=f"ZoMi ML system octal [0o] file permissions [Default: {oct(DEFAULT_SYSTEM_CREATE_PERMISSIONS)}]",
         type=lambda x: int(x, 8),
         default=DEFAULT_SYSTEM_CREATE_PERMISSIONS,
     )
     parser.add_argument(
         "--config-create-permissions",
-        help=f"Config files (server.yml, client.yml, secrets.yml) octal [0o] file permissions "
+        help=f"Config files (client.yml, secrets.yml) octal [0o] file permissions "
         f"[Default: {oct(DEFAULT_CONFIG_CREATE_PERMISSIONS)}]",
         type=lambda x: int(x, 8),
         default=DEFAULT_CONFIG_CREATE_PERMISSIONS,
@@ -1177,7 +1179,7 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
     :param cmd: The pip command as an array.
     """
 
-    install_cmd: List[str]
+    install_cmd: Optional[List[str]]
     context = None
 
     def __init__(self, *args, **kwargs):
@@ -1266,7 +1268,7 @@ class ZoMiEnvBuilder(venv.EnvBuilder):
 
 def check_python_version(maj: int, min: int):
     if sys.version_info.major < maj:
-        logger.error("Python 3+ is required to run this install script!")
+        logger.error(f"Python {maj}.{min}+ is required!")
         sys.exit(1)
     elif sys.version_info.major == maj:
         if sys.version_info.minor < min:
