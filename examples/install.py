@@ -107,19 +107,20 @@ def check_imports():
     import importlib
 
     ret = True
+    _missing = []
     for imp_name in __dependencies__:
         try:
             importlib.import_module(imp_name)
         except ImportError:
-            _msg = (
-                f"Missing python module dependency: {imp_name}"
-                f":: Please install the python package"
-            )
-            logger.error(_msg)
-            print(_msg)
+            _missing.append(imp_name)
             ret = False
         else:
             logger.debug(f"Found python module dependency: {imp_name}")
+    if _missing:
+        logger.error(
+            f"Missing python module dependencies: {_missing}"
+            f":: Please install the python package(s)"
+        )
     return ret
 
 
@@ -314,7 +315,7 @@ def parse_cli():
         help="User to install as [leave empty to auto-detect what user runs "
         "the web server]",
         type=str,
-        dest="ml_user",
+        dest="system_user",
         default="",
     )
     parser.add_argument(
@@ -323,7 +324,7 @@ def parse_cli():
         help="Group member to install as [leave empty to auto-detect what "
         "group member runs the web server]",
         type=str,
-        dest="ml_group",
+        dest="system_group",
         default="",
     )
 
@@ -456,9 +457,9 @@ def do_web_user():
         else:
             _missing = f"{_u} and {_g}"
 
-        _mess = f"Unable to determine web server {_missing}, EXITING..."
+        _mess = f"Unable to determine web server {_missing}, please specify manually!"
         if not testing:
-            logger.error(_mess)
+            logger.exception(_mess)
             sys.exit(1)
         else:
             test_msg(_mess)
@@ -795,7 +796,9 @@ def install_host_dependencies(_type: str):
                             logger.warning(
                                 f"Running as non-root user but this is test mode! continuing to test... "
                             )
-                        install_cmd = [inst_binary, inst_prefix, _dep_name]
+                        install_cmd = [inst_binary]
+                        install_cmd.extend(inst_prefix)
+                        install_cmd.append(_dep_name)
                         msg = f"Running HOST package manager installation command: {install_cmd}"
                         if not interactive:
                             if not testing:
@@ -836,6 +839,7 @@ def install_host_dependencies(_type: str):
                                 else:
                                     _install = True
                                 if _install:
+                                    logger.debug(f"Running: {install_cmd}")
                                     try:
                                         subprocess.run(
                                             install_cmd,
@@ -1039,7 +1043,7 @@ def do_install():
 
     _f: Path = data_dir / "bin/eventproc.py"
     test_msg(
-        f"Modifying {_f.as_posix()} to use VENV {_venv.context.env_exec_cmd} shebang"
+        f"Modifying {_f.as_posix()} to use VENV shebang: #!{_venv.context.env_exec_cmd}"
     )
     if not testing:
         if not _f.is_absolute():
@@ -1097,9 +1101,6 @@ class Envsubst:
             self.env = env
         # handle simple un-bracketed env vars like $FOO
         a: str = _simple_re.sub(self._repl_simple_env_var, search_string)
-        if not isinstance(a, str):
-            logger.warning(f"{self.lp} AFTER simple regex replacement, output is not a string: {type(a)}. Converting to str.")
-            a = str(a)
         # handle bracketed env vars with optional default specification
         b: str = _extended_re.sub(self._repl_extended_env_var, a)
         return b
@@ -1139,11 +1140,11 @@ class Envsubst:
                         return default
                 elif m.group(3) == "-":
                     # use default if var is unset
-                    return self._resolve_var(var_name, default)
+                    return str(self._resolve_var(var_name, default))
                 else:
                     raise RuntimeError("unexpected string matched regex")
             else:
-                return self._resolve_var(var_name, "" if self.strict else None)
+                return str(self._resolve_var(var_name, "" if self.strict else None))
 
 
 def envsubst(string: str, env: Optional[Dict] = None, strict: bool = False):
@@ -1288,7 +1289,7 @@ if __name__ == "__main__":
         logger.critical(f"Missing python dependencies, exiting...")
         sys.exit(1)
     else:
-        logger.info("All python dependencies that this install script requires found.")
+        logger.info("All python dependencies that this install script requires were found.")
 
     class TqdmLoggingHandler(logging.Handler):
         def __init__(self, level=logging.NOTSET):
@@ -1359,15 +1360,15 @@ if __name__ == "__main__":
     args.config_dir = cfg_dir = cfg_dir.expanduser().resolve()
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
-    install_as_user, install_as_group = args.ml_user or "", args.ml_group or ""
+    install_as_user, install_as_group = args.system_user or "", args.system_group or ""
     do_web_user()
     if not install_as_user:
         logger.error(
             "user not specified/cant be computed (try to specify user and group), exiting..."
         )
         sys.exit(1)
-    args.ml_user = install_as_user
-    args.ml_group = install_as_group
+    args.system_user = install_as_user
+    args.system_group = install_as_group
 
     show_config(args)
 
