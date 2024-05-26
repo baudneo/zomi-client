@@ -211,7 +211,6 @@ class ZMDB:
             "name": "zm",
             "driver": "mysql+pymysql",
         }
-        # todo: get db type from zm .conf files for driver string? postgres vs mysql
 
         self.conf_file_data = self.read_zm_configs()
         self.cgi_path = self.conf_file_data.get(
@@ -255,11 +254,8 @@ class ZMDB:
         db_config_with_env = self.env.db
         logger.debug(f"{LP} ENV VARS = {db_config_with_env}")
         for _attr in dir(db_config_with_env):
-            if _attr.startswith("_"):
-                continue
-            elif _attr in _pydantic_attrs:
-                continue
-            elif _attr in ["host", "port", "user", "password", "name", "driver"]:
+            if _attr in ["host", "port", "user", "password", "name", "driver"]:
+                # check the env
                 if not (set_to := getattr(db_config_with_env, _attr)):
                     # env var is not set, try to get attr from ZM .conf files
                     xtra_ = ""
@@ -277,17 +273,17 @@ class ZMDB:
                         )
                         xtra_ = f" (defaulting to '{set_to}' from ZM .conf files)"
 
+                # check the config file
                 if g and g.config:
                     if g.config.zoneminder.db:
                         cfg_file_db = getattr(g.config.zoneminder.db, _attr)
                         if cfg_file_db is not None:
-                            # todo: what if we want it to be an empty string? or int(0)
-                            # There is an entry in the config file, use it even if ENV or .conf files set it
+                            # There is an entry in the config file, use it even if EN-V or .conf files set it
                             set_to = cfg_file_db
                             xtra_ = f" (OVERRIDING to '{set_to}' from config file)"
 
                 if not set_to:
-                    # not in env or .conf files try internal defaults
+                    # not in env, ZM .conf files or config file try internal defaults
                     unset_ += "CFG .CONFs "
                     set_to = defaults[_attr]
                     xtra_ = f" (defaulting to '{set_to}' from internal defaults)"
@@ -344,7 +340,7 @@ class ZMDB:
         )
 
     def run_select(self, select_stmt: select) -> ResultProxy:
-        """A function to run a select statement"""
+        """A method to run a select statement"""
         self._check_conn()
         try:
             result = self.connection.execute(select_stmt)
@@ -354,7 +350,7 @@ class ZMDB:
             return result
 
     def mid_from_eid(self, eid: int) -> int:
-        """A function to get the Monitor ID from the Event ID"""
+        """A method to get the Monitor ID from the Event ID"""
         mid: int = 0
         e_select: select = select(self.meta.tables["Events"].c.MonitorId).where(
             self.meta.tables["Events"].c.Id == eid
@@ -366,6 +362,7 @@ class ZMDB:
         return int(mid)
 
     def event_frames_data(self, eid: int):
+        """A method to get the event frames data from the DB for a given event ID"""
         event_frames: List[Dict[str, Any]] = []
         _select: select = select(self.meta.tables["Frames"]).where(
             self.meta.tables["Frames"].c.EventId == eid
@@ -387,7 +384,7 @@ class ZMDB:
         return event_frames
 
     def _mon_name_from_mid(self, mid: int) -> str:
-        # Get Monitor 'Name'
+        """Get the monitor name from the DB."""
         mon_name = None
         mid_name_select: select = select(self.meta.tables["Monitors"].c.Name).where(
             self.meta.tables["Monitors"].c.Id == mid
@@ -459,7 +456,7 @@ class ZMDB:
         return zones
 
     async def import_zones(self):
-        """A function to import zones that are defined in the ZoneMinder web GUI instead of defining
+        """A method to import zones that are defined in the ZoneMinder web GUI instead of defining
         zones in the per-monitor section of the configuration file.
 
 

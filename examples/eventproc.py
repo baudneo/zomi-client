@@ -161,6 +161,7 @@ if __name__ == "__main__":
     logger.debug(f"ENV VARS: {ENV_VARS}")
     g: GlobalConfig = create_global_config()
     g.Environment = ENV_VARS
+    detections = None
     try:
         detections = loop.run_until_complete(main())
     except Exception as e:
@@ -172,8 +173,13 @@ if __name__ == "__main__":
                 handler.flush2()
     # Allow 250ms for aiohttp SSL session context to close properly
     # loop.run_until_complete(asyncio.sleep(0.25))
-    logger.debug(f"DETECTIONS: {detections}")
-    loop.run_until_complete(zm_client.clean_up())
-    logger.info(f"perf:FINAL:MID {g.mid}: Event processing took {time.time() - _start:.5f} seconds")
+    if detections is not None:
+        logger.debug(f"DETECTIONS: {detections}")
+
+    final_msg = f"perf:FINAL: Event processing took {time.time() - _start:.5f} seconds"
     if not loop.is_closed():
+        loop.run_until_complete(zm_client.clean_up())
+        logger.info(final_msg)
         loop.close()
+    else:
+        logger.info(final_msg)

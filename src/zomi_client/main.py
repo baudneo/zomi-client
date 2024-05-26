@@ -512,9 +512,18 @@ class ZMClient:
             if g:
                 g.past_event = True
 
-    async def signal_handler(self, sig, *args, **kwargs):
-        logger.info(f"Received signal '{sig}', cleaning connections up and exiting")
-        await self.clean_up()
+    def signal_handler_int(self, *args, **kwargs):
+        logger.info(f"Received signal: SIGINT, cleaning connections up and exiting")
+        self.signal_handler_clean_up(*args, **kwargs)
+
+    def signal_handler_term(self, *args, **kwargs):
+        logger.info(f"Received signal: SIGTERM, cleaning connections up and exiting")
+        self.signal_handler_clean_up(*args, **kwargs)
+
+    def signal_handler_clean_up(self, *args, **kwargs):
+        self.db.clean_up()
+        self.api.session.close()
+        asyncio.get_event_loop().create_task(self.api.async_session.close())
         asyncio.get_event_loop().stop()
 
     async def clean_up(self):
@@ -543,11 +552,15 @@ class ZMClient:
         logger.debug(
             f"{lp} registering signal handler for {' ,'.join(signals).rstrip(',')}"
         )
-        for sig_name in signals:
-            loop.add_signal_handler(
-                getattr(signal, sig_name),
-                lambda: loop.create_task(self.signal_handler(sig_name)),
-            )
+
+        loop.add_signal_handler(
+            getattr(signal, "SIGINT"),
+            self.signal_handler_int,
+        )
+        loop.add_signal_handler(
+            getattr(signal, "SIGTERM"),
+            self.signal_handler_term,
+        )
 
         if global_config:
             logger.debug(f"{lp} Using supplied global config")
@@ -581,12 +594,6 @@ class ZMClient:
                 future.result()
         # self.config_hash = _hash.result()
 
-    def _init_db(self):
-        from .Libs.DB import ZMDB
-
-        self.db = ZMDB()
-        logger.debug(f"DB initialized")
-
     async def _get_db_data(self, eid: int):
         """Get data from the database"""
         # return mid, mon_name, mon_post, mon_pre, mon_fps, reason, event_path, \
@@ -611,7 +618,15 @@ class ZMClient:
                 f"{LP} CLI supplied monitor ID ({g.mid}) INCORRECT! Changed to: {mid}"
             )
         if mid:
-            g.mid = mid
+            if not g.mid or g.mid != mid:
+                logger.debug(f"{LP} Setting GLOBAL (Current: {g.mid}) monitor ID to: {mid}")
+                g.mid = mid
+
+    def _init_db(self):
+        from .Libs.DB import ZMDB
+
+        self.db = ZMDB()
+        logger.debug(f"DB initialized")
 
     def _init_api(self):
         g.api = self.api = ZMAPI(g.config.zoneminder)
