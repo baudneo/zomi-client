@@ -440,7 +440,12 @@ class ZMAPI:
             such as insufficient rights to a resource.
             404: not found - RESOURCE TEMP OR PERM GONE"""
             code_ = err.response.status_code
-            err_msg = err.response.json()
+            err_msg = 'N/A'
+            try:
+                err_msg = err.response.json()
+            except Exception as e:
+                logger.error(f"{lp} failed to decode JSON error message: {e}")
+
             logger.error(
                 f"{lp} got API login error -> Code: {code_}  || JSON: {err_msg}"
             )
