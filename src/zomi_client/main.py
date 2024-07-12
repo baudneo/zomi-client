@@ -1074,14 +1074,17 @@ class ZMClient:
                 )
                 break
 
-            if not g.past_event and img_time < 1.0:
-                remaining = 1.0 - img_time
-                img_msg = (
-                    f"{img_msg} (live target: 1 FPS), sleeping for {remaining:.5f}"
-                )
-                logger.debug(f"{img_msg}")
-                await asyncio.sleep(remaining)
-                logger.debug("DBG>>> END OF SLEEP")
+            if (not g.past_event and img_time < 1.0):
+                if image_loop >= self.image_pipeline.max_frames:
+                    logger.debug(f"{img_msg}")
+                else:
+                    remaining = 1.0 - img_time
+                    img_msg = (
+                        f"{img_msg} (live target: 1 FPS), sleeping for {remaining:.5f}"
+                    )
+                    logger.debug(f"{img_msg}")
+                    await asyncio.sleep(remaining)
+                    logger.debug("DBG>>> END OF SLEEP")
             else:
                 logger.debug(f"{img_msg}")
             image_start = time.time()
