@@ -870,7 +870,7 @@ class ZMDB:
             logger.warning(f"{LP} could not calculate the storage path for this event!")
 
         logger.debug(
-            f"perf:{LP} Grabbing DB info took {time.time() - _start:.5f} s ----> {final_str.rstrip()}"
+            f"perf:{LP} Grabbing DB info took {time.time() - _start:.5f} s"
         )
         return (
             mid,
@@ -901,6 +901,6 @@ class ZMDB:
     def clean_up(self):
         if self.connection.closed is False:
             self.connection.close()
-            logger.debug(f"{LP}close:: Closed connection to ZoneMinder database")
+            logger.debug(f"{LP}close: closed connection to ZoneMinder DB")
         else:
-            logger.debug(f"{LP}close:: ZoneMinder database connection already closed")
+            logger.debug(f"{LP}close: ZoneMinder DB connection already closed")
