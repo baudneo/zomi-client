@@ -17,7 +17,7 @@ if [[ -n "$2" ]]; then
     MID=""
 fi
 echo "ML_CLIENT_CONF_FILE: ${ML_CLIENT_CONF_FILE}"
-config="${ML_CLIENT_CONF_FILE:-/opt/zomi/src/client/configs/client.yml}"
+config="${ML_CLIENT_CONF_FILE:-/opt/zomi/client/conf/client.yml}"
 detect_script="${ML_CLIENT_EVENT_START:-$(which zomi-eventproc)}"
 
 event_start_command=(
