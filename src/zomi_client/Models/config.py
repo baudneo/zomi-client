@@ -618,6 +618,7 @@ class ClientEnvVars(BaseSettings):
     zm_conf_dir: Path = Field(
         Path("/etc/zm"),
         description="Path to ZoneMinder config files, Default: /etc/zm",
+        alias="ML_CLIENT_ZM_CONF_DIR"
     )
     ml_conf_dir: Optional[Path] = Field(
         None,
