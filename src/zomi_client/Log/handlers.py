@@ -39,6 +39,7 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
         """
         from ..main import get_global_config
 
+        g = get_global_config()
         fh_enabled = g.config.logging.file.enabled
         if fh_enabled:
             from . import CLIENT_LOGGER_NAME
@@ -48,7 +49,6 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
             for _handler in handlers:
                 if isinstance(_handler, logging.FileHandler):
                     has_fh = True
-            g = get_global_config()
 
             if not has_fh:
                 msg = "No file handler to flush to, printing to stdout. This should help with errors on startup."
