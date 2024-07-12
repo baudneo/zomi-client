@@ -67,7 +67,7 @@ zoneminder:
       # - NOTE: The 'Authorization' header is automatically added if you have a user and password set
 
   # - You only need to configure this in extreme cases.
-  # - The db connection is configured automatically
+  # - The db connection is configured automatically as long as conf_dir is set correctly.
   db:
     # - Default: the system will first look in ENV,
     # - then look in ZM .conf files, (Recommended)
@@ -93,13 +93,15 @@ zoneminder:
       #url:
       # - Timeout in seconds for image grab request
       timeout: 15
-      # - Only grab a maximum of x frames per 'event'
+      # - Only grab a maximum of x frames per 'event' (after x frames, the ML processing stops)
       max_frames: 10
       # - Seconds Between frames (1 = 1 fps, 0.5 = 2 fps, 0.25 = 4 fps, etc.)
       # 1 is default and recommended unless it is a time-lapse camera
       sbf: 1
+      # - want to only grab a frame every 3.67 seconds?
+      #sbf: 3.67
 
-      # - Attempts and Delays are only used if the event is a past event
+      # - Attempts and Delays are only used if the event is a past event (usually to test if things are working)
       # - A past event already has images/video written to disk, so it uses a different method than LIVE events
       attempts: 3  # attempts to grab the requested frame
       delay: 1.0   # delay between failed attempts
@@ -141,14 +143,13 @@ logging:
     replacement_str: <sanitized>
 
   console:
-    # - Log to console
+    # - Log to console (stdout)
     enabled: ${ML_INSTALL_LOGGING_CONSOLE_ENABLED}
     #level: debug
 
   syslog:
     enabled: ${ML_INSTALL_LOGGING_SYSLOG_ENABLED}
     #level: debug
-    #address: /dev/log
     address: ${ML_INSTALL_LOGGING_SYSLOG_ADDRESS}
 
   file:
@@ -157,7 +158,7 @@ logging:
     #level: debug
     # - Directory where log files will be stored
     path: ${LOGGING_DIR}
-    # - Prefix logname with this string, 'abc' will become abc_m1.log for monitor 1
+    # - Prefix logname with this string, 'abc' will become abc_m1.log for monitor ID 1
     filename_prefix: zomi-client
     # - Do not suffix logs with monitor id, log everything to a single file (Leave blank to disable)
     # - If this has a value, filename_prefix is ignored.
@@ -168,6 +169,7 @@ logging:
 
 # - ML Server connection settings
 mlapi:
+  # - name is for your reference only
   name: ${ROUTE_NAME}
   host: ${ROUTE_HOST}  # IP or hostname (add https:// if TLS encrypted)
   port: ${ROUTE_PORT}
@@ -233,7 +235,7 @@ notifications:
 
 
   zmninja:
-    # - Attempt to send a push notification to zmNinja clients (WIP as zmninja is been moved to ZoneMinder app signatures)
+    # - Attempt to send a push notification to zmNinja clients (WIP as zmninja is being moved to ZoneMinder app signatures)
     enabled: no
 
     fcm:
@@ -349,7 +351,7 @@ notifications:
     # - i.e: seconds: 30 means only send a pushover notification if it has been at least 30 seconds since the
     # - last SUCCESSFUL pushover notification for that MONITOR
     cooldown:
-    # - [Default: no]
+      # - [Default: no]
       enabled: no
       # - [Default: 30]
       seconds: 30
@@ -422,20 +424,18 @@ notifications:
     # - Path to the script to run
     script: ${DATA_DIR}/scripts/notify.sh
 
-
-
-    # - A list of arguments to pass to the script, order matters
-    # - > NOT IMPLEMENTED YET <
-
     # - Pass the JWT token to the script in any URL that requires it.
     # - NOTE: The script will see your token in plain text, so make sure you trust the script.
     pass_token: no
 
     # - Pass the username and password to the script in any URL that requires it.
     # - This should only be used in extreme cases where a token may expire by the time you call a delayed task.
-    # - This will pass credentials in plain text to the script. May god have mercy on your soul.
+    # - This will pass credentials in plain text to the script.
+    # !!! NOTE: May god have mercy on your soul.
     pass_creds: no
 
+    # - A list of arguments to pass to the script, order matters
+    # - > NOT IMPLEMENTED YET <
     args:
       - mid  # Monitor ID
       - eid  # Event ID
@@ -446,23 +446,24 @@ notifications:
       - results  # [ {label: person, conf: 0.68, bbox: (x, y, x2, y2)},  ]
       # - x,y = top left corner x2, y2 = bottom left corner
 
+
 detection_settings:
   # - Only run on events that were triggered by Motion, ZM Trigger or ONVIF.
   # - This will skip "Continuous" events
   motion_only: yes
 
-
   models:
-    # - Models to run on all monitors
+    # - Models to run on all monitors, the model names are defined in the server config file
     # - NOTE: You can override these settings per monitor in monitors: section
-    # !!!!!! notice the trailing colon in the model name!!!!!
+    # !!!!!! notice the trailing colon in the model name if enabled: yes is omitted !!!!!
     yolov4:
+      enabled: yes  # Default and implied, Can be omitted.
     yolov7:
 
-  # - Import zones that have been defined in ZM Web GUI
+  # - Import zones that have been defined in ZM Web GUI (import the name and polygon points)
   import_zones: yes
 
-  # - object must be in one of the zones that triggered the motion event
+  # - detected object must be in one of the zones that triggered the motion event
   # - 1 pixel inside the zone is enough to trigger this.
   # - IMPLIES: import_zones MEANING, it will import zm zones and use them
   match_origin_zone: no
@@ -472,7 +473,7 @@ detection_settings:
     # - BE AWARE, if you leave this on and forget, it will eat up disk space
     debug:
       # - Shows bounding box of filtered out detections in RED
-      # - Everything that didnt make it past filters will be drawn in red
+      # - Everything that didn't make it past filters will be drawn in red
       enabled: no
       # - Where to save the debug images Default: <images_dir>/debug
       path: ${IMAGE_DIR}/debug
@@ -502,7 +503,7 @@ detection_settings:
     training:
       # NOT IMPLEMENTED ***
       # - Save an image and a JSON file for ML model training/testing purposes
-      # - The image is the unmodified original image with no annotations (useful for testing or negative training)
+      # - The image is the unmodified original image with no annotations
       enabled: no
       path: ${IMAGE_DIR}/train
 
@@ -540,19 +541,20 @@ label_groups:
     - 5H4D0W
     - 1337H4X0R
 
-
+# - Best match configuration
 matching:
   # - Can use: first, most, most_unique
   # - Tiebreakers will use the SUM of confidences for the model
   # - The strategy is in relation to the 'event' its processing and is only defined on a global level.
-  # -- first: break out of the detection loop on the very first filtered detection
-  # -- most: Find the best match after processing the event
+  # - first: break out of the detection loop on the very first filtered detection
+  # - most: let the event finish processing, the frame with most detected objects wins
+  # - most_unique: let the event finish processing, the frame with the most unique (no duplicate labels) detected objects wins
   strategy: first
 
   # *** The following are globally applied to all monitors but can be overridden on a per monitor/zone basis (in monitors: section)
 
   # - Remove matches that seem to be 'in the same place'.
-  # - Comparison is between the previous detection match and ongoing detected objects.
+  # - Comparison is between the previous best detection and ongoing detected objects (for that monitor ID).
   static_objects:
     enabled: no
     # - The max difference in the center of the objects bounding box between previous and current detection.
@@ -572,14 +574,19 @@ matching:
     object:
       min_conf: 0.42
       pattern: "(car|truck|bus|person|dog|cat)"
+      # - How much of the FULL IMAGE is covered by the bounding box
       total_max_area: 100%
       total_min_area: 1px
+      # - How much of the ZONE is covered by the bounding box
+      max_area: 100%
+      min_area: 1px
 
     face:
+      # - Only pattern is supported (confidence is either 0% or 100%)
       pattern: ".*"
 
     alpr:
-      # Regex is allowed so you can really dial down and possibly help with missed digits
+      # Regex is allowed, get creative
       pattern: ".*"
       # only look for certain plates
       # pattern: "(ABC123|2fast4u)"
@@ -599,8 +606,9 @@ monitors:
 
   # *** Examples ***
   999999999901:  # Monitor ID from ZM
+    # - 'name' is for your personal reference, it is not used by ZoMi
+    name: example monitor (front door)
     # - Override global models for this monitor
-    # - These model names are defined in the ML server config
     models:
       # - names are lower cased, spaces are preserved
       yolov4:
@@ -612,7 +620,7 @@ monitors:
       yolov7x:
         enabled: no
 
-    # - static objects overrides
+    # - Monitor level static objects overrides
     static_objects:
       enabled: yes
       # - Difference in area between current and previous detection
@@ -620,33 +628,23 @@ monitors:
       # - Only apply to these labels (label_groups supported)
       labels:
         - car
-      #ignore_labels:
-      #  - bird
 
-    # - Monitor label filter overrides
+    # - Monitor level filters overrides
     filters:
       object:
         pattern: "(person|dog|cat|han_solo)"
-        # - Per label filtering (label_groups supported)
         labels:
           person:
             min_conf: 0.5
-            # - The minimum and maximum area of the detection box in pixels or percentage of the ZONE.
-            # - (how much of the zone is covered by the detection box)
             #min_area: 10px
             #max_area: 10%
-            # - The minimum and maximum area of the detection box in pixels or percentage of the FULL IMAGE.
-            # - (how much of the image is covered by the detection box)
             #total_min_area: 10px
             #total_max_area: 10%
 
       face:
         # - You can specify trained face names here, only pattern supported currently
         pattern: ".*"
-        #pattern: "(James|Addison)"
-        # - Confidence will always be 0% or 100%, match or no match for recognition
       alpr:
-        # - Only pattern and min_conf supported
         pattern: ".*"
         min_conf: 0.1
 
@@ -655,56 +653,49 @@ monitors:
     skip_imported_zones: no
 
     zones:
-    # - These are zones that are defined in the config file on top of imported ZoneMinder zones
-    # - If you import ZM zones you can add a ML config for that zone here.
-    # - Example: If the imported zone is named "Front Yard", this would set the ML config for it.
+    # - These are ML zones that are defined in the config file
+    # - You can override GLOBAL and MONITOR level settings here.
 
-        Front Yard: # Case and space sensitive
-          # enable/disable this zone, better than deleting it.
-          enabled: yes
+      # - If you import ZM zones you can add an ML config for that zone here.
+      # - Example: If the imported zone is named "Front Yard", this would set the ML config for it.
+      Front Yard: # Name of the zone, case and space sensitive
+        # enable/disable this zone, better than deleting it.
+        enabled: yes
 
-          # - FOR NON-IMPORTED ZONE.
-          # - Polygon points, go and map a zone in ZM and copy the points here if this is not an imported zone.
-          # - Remember that these are zones defined strictly for ML. If you imported your ZM zones,
-          # - you can omit the points. The points will be imported from ZM.
-          points: 0,2146 3818,2146 3820,1058 2604,426 2526,534 198,466 124,632 8,648
-          # - FOR NON-IMPORTED ZONE.
-          # - Used to scale polygon points if the monitor resolution has changed.
-          # - When you created polygon it was in 4K mode, but now you are running in 1080p mode. It will scale it properly.
-          # - Strings like "1080p" "4k" "4kuhd"("uhd") "720p" are supported or a tuple of (height, width)
+        # - FOR NON-IMPORTED ZONE.
+        # - Polygon points, go and map a zone in ZM and copy the points here if this is not an imported zone.
+        # - Remember that these are zones defined strictly for ML. If you imported your ZM zones,
+        # - you can omit the points. The points will be imported from ZM.
+        points: # because this is an imported zone, we dont define the polygon points
+        # points: 0,435 660,85 1285,40 1910,160 1920,1080 0,1080
 
-          # *** A Tuple in yaml is defined as [1, 2, 3]
-          resolution: 1080p  # [1080, 1920]
+        # - FOR NON-IMPORTED ZONE.
+        # - Used to scale polygon points if the monitor resolution has changed.
+        # - When you created polygon it was in 4K mode, but now you are running in 1080p mode. it will be scaled properly.
+        # - Strings like "1080p" "4k" "4kuhd"("uhd") "720p" are supported or a tuple of (height, width)
+        resolution: # because this is an imported zone, we dont define the resolution the polygon was created in
+        # *** A Tuple in yaml is defined as [1, 2, 3]
+        #resolution: 1080p  # [1080, 1920]
 
-          # - This is on the Zone level and will take precedence over the global and per monitor setting
-          static_objects:
-            enabled: no
-            # - difference in area between current and previous detection, % or pixel value
-            difference: 25%
+        # - Zone level static objects overrides
+        static_objects:
+          enabled: no
+          difference: 25%
+          labels:
+            - vehicles
+
+        # - Zone level filters overrides
+        filters:
+          object:
+            pattern: "(person|dog|cat|chewbacca)"
+            # - Per label filtering (label_groups supported)
             labels:
-              - vehicles
-
-          # - Zone level filters overrides
-          filters:
-            object:
-              pattern: "(person|dog|cat|chewbacca)"
-              # - Per label filtering (label_groups supported)
-              labels:
-                person:
-                  min_conf: 0.5
-                    # - The minimum and maximum area of the detection box in pixels or percentage of the zone.
-                    # - (how much of the zone is covered by the detection box)
-                  #min_area: 10px
-                  #max_area: 10%
-                  # - The minimum and maximum area of the detection box in pixels or percentage of the full image.
-                  # - (how much of the image is covered by the detection box)
-                  #total_min_area: 10px
-                  #total_max_area: 10%
-            face:
-              # - You can specify trained face names here, only pattern supported currently
-              pattern: ".*"
-              #pattern: "(James|Addison)"
-            alpr:
-              # - Only pattern and min_conf supported
-              pattern: ".*"
-              min_conf: 0.1
+              person:
+                min_conf: 0.5
+                #max_area: 10%
+                #total_max_area: 43%
+          face:
+            pattern: ".*"
+          alpr:
+            pattern: ".*"
+            min_conf: 0.1
