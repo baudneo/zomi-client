@@ -33,22 +33,28 @@ class BufferedLogHandler(logging.handlers.BufferingHandler):
 
     def flush2(self, *args, **kwargs):
         """
-        Only print to stdout if there is no file handler to flush to
+        Only print to stdout if there is no file handler to flush to AND file logging is enabled
 
         UPDATE: need to flush to stdout
         """
-        from . import CLIENT_LOGGER_NAME
+        from ..main import get_global_config
 
-        has_fh = False
-        handlers = logging.getLogger(CLIENT_LOGGER_NAME).handlers
-        for _handler in handlers:
-            if isinstance(_handler, logging.FileHandler):
-                has_fh = True
-        if not has_fh:
-            msg = "No file handler to flush to, printing to stdout. This should help with errors on startup."
-            print(msg)
-            # flush to stdout
-            for record in self.buffer:
-                print(record.getMessage())
-            print(msg)
-            self.buffer.clear()
+        fh_enabled = g.config.logging.file.enabled
+        if fh_enabled:
+            from . import CLIENT_LOGGER_NAME
+
+            has_fh = False
+            handlers = logging.getLogger(CLIENT_LOGGER_NAME).handlers
+            for _handler in handlers:
+                if isinstance(_handler, logging.FileHandler):
+                    has_fh = True
+            g = get_global_config()
+
+            if not has_fh:
+                msg = "No file handler to flush to, printing to stdout. This should help with errors on startup."
+                print(msg)
+                # flush to stdout
+                for record in self.buffer:
+                    print(record.getMessage())
+                print(msg)
+                self.buffer.clear()
