@@ -36,7 +36,7 @@ python3 -m pip install --upgrade pip
 - Python 3.8+ (3.10+ recommended) 
 - Python packages required by the [install script](examples/install.py)
   - `psutil`
-  - `request`
+  - `requests`
   - `tqdm`
   - `distro`
 - OpenCV (Contrib) 4.2.0+ (4.8.0+ recommended) with Python3 bindings.
