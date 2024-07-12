@@ -154,10 +154,10 @@ if __name__ == "__main__":
     filename = Path(__file__).stem
     args = _parse_cli()
     logger.debug(f"Starting {filename}...")
+    ENV_VARS = ClientEnvVars()
     loop = uvloop.new_event_loop()
     asyncio.set_event_loop(loop)
     _start = time.time()
-    ENV_VARS = ClientEnvVars()
     logger.debug(f"ENV VARS: {ENV_VARS}")
     g: GlobalConfig = create_global_config()
     g.Environment = ENV_VARS
