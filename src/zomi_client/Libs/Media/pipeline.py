@@ -71,7 +71,7 @@ class PipeLine:
                 )
                 self.increment_by = int(self.event_tot_frames / self.event_tot_seconds)
                 logger.debug(
-                    f"{LP} grabbed event data from ZM API for event '{g.eid}' -- event total Frames: "
+                    f"{LP} grabbed event data from ZoneMinder DB for event '{g.eid}' -- event total Frames: "
                     f"{self.event_tot_frames} -- EndDateTime: {self.event_end_datetime} -- StartDateTime: "
                     f"{self.start_datetime} - EventTotSec: {self.event_tot_seconds} - IncrementBy: {self.increment_by} "
                     f"- has event ended: {self.event_ended}"
