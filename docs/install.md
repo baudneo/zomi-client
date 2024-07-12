@@ -69,8 +69,8 @@ Start in the repo base directory
 # Install as a specific user and group with zm config helpers
 ./examples/install.py --user www-data --group www-data --zm-portal http://zm.example.com --zm-user zmapiuser --zm-pass zmapipass 
 
-# This should 'just work' with the defaults
-./examples/install.py
+# This should 'just work' with the defaults, interactive mode.
+./examples/install.py -I
 
 ```
 
