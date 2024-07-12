@@ -1172,10 +1172,14 @@ class ZMClient:
     ) -> List[Result]:
         """Filter detections using a loop within a loop, outer loop is filter by object label, inner loop is to filter by zone."""
 
+        global_filters = g.config.matching.filters
+        mon_cfg = g.config.monitors.get(g.mid)
+        mon_filters = mon_cfg.filters
         zones = self.zones.copy()
         zone_filters = self.zone_filters
-        object_label_filters = {}
+        typed_label_filters = {}
         final_filters = None
+        final_filter_src: str = "<NOT_SET>"
         base_filters = None
         # strategy: MatchStrategy = g.config.matching.strategy
         type_ = result.type
@@ -1190,6 +1194,14 @@ class ZMClient:
         i = 0
         zone_name: str
         zone_data: MonitorZones
+        _result: Result
+        type_filter: Union[
+            OverRideObjectFilters,
+            OverRideFaceFilters,
+            OverRideAlprFilters,
+            None,
+        ] = None
+        _lp = f"_filter:{image_name}:'{model_name}'::{type_}::"
 
         def filter_out(lbl, cnf, box):
             """Filter out detections"""
@@ -1201,11 +1213,7 @@ class ZMClient:
                 )
             )
 
-        _lp = f"_filter:{image_name}:'{model_name}'::{type_}::"
-
-        #
-        # Outer Loop
-        _result: Result
+        # Outer Loop (results)
         for _result in result.results:
             label, confidence, bbox, color = (
                 _result.label,
@@ -1216,16 +1224,15 @@ class ZMClient:
             i += 1
             _lp = f"fltr:{model_name}:'{label}' {i}/{_lbl_tot}:"
 
-            #
-            # Inner Loop
             idx = 0
             found_match = False
             skip_imported_zones: bool = False
-            mon_cfg = g.config.monitors.get(g.mid)
+
             if mon_cfg:
                 if mon_cfg.skip_imported_zones is not None:
                     skip_imported_zones = mon_cfg.skip_imported_zones
 
+            # Inner Loop (zones)
             for zone_name, zone_data in zones.items():
                 idx += 1
                 __lp = f"{_lp}zone {idx}/{_zn_tot}::"
@@ -1239,18 +1246,16 @@ class ZMClient:
                         f"{__lp} Zone '{zone_name}' is disabled by config file..."
                     )
                     continue
-
                 if not zone_data.points:
                     logger.warning(
                         f"{__lp} Zone '{zone_name}' has no points! Did you rename a Zone in ZM"
                         f" or forget to add points? SKIPPING..."
                     )
                     continue
+
                 zone_points = zone_data.points
-                # points already validated
                 zone_polygon = Polygon(zone_points)
                 _data = {"name": zone_name, "points": zone_polygon}
-
                 if _data not in self.zone_polygons:
                     self.zone_polygons.append(_data)
                 bbox_polygon = Polygon(self._bbox2points(bbox))
@@ -1260,69 +1265,61 @@ class ZMClient:
                         f"{__lp} inside of Zone '{zone_name}' @ {list(zip(*zone_polygon.exterior.coords.xy))[:-1]}"
                     )
                     if zone_name in zone_filters and zone_filters[zone_name]:
-                        # logger.debug(f"{lp} zone '{zone_name}' has filters")
+                        logger.debug(f"{__lp} zone '{zone_name}' has filters defined")
                         final_filters = zone_filters[zone_name]
+                        final_filter_src = "<ZONE>"
                     else:
-                        # logger.debug(
-                        #     f"{lp} zone '{zone_name}' has NO filters, using COMBINED global+monitor filters"
-                        # )
+                        logger.debug(
+                            f"{__lp} zone '{zone_name}' has NO filters, using COMBINED global+monitor filters"
+                        )
                         final_filters = self._comb_filters
-                    if isinstance(final_filters, dict) and isinstance(
-                        final_filters.get("object"), dict
-                    ):
-                        # logger.debug(
-                        #     f"{type(final_filters)=} -- {type(object_label_filters)=}\n\n{final_filters=}\n\n"
-                        # )
-                        object_label_filters = final_filters["object"]["labels"]
-                        # logger.debug(f"\nFINAL FILTERS as DICT {final_filters=}\n\n")
-                        if object_label_filters and label in object_label_filters:
-                            if object_label_filters[label]:
-                                logger.debug(
-                                    f"{__lp} '{label}' IS IN per label filters for zone '{zone_name}'"
-                                )
+                        final_filter_src = "<COMBINED>"
 
-                                for k, v in object_label_filters[label].items():
-                                    if (
-                                        v is not None
-                                        and final_filters["object"][k] != v
-                                    ):
-                                        # logger.debug(
-                                        #     f"{lp} Overriding object:'{k}' [{final_filters['object'][k]}] "
-                                        #     f"with ZONE object:labels:{k} filter VALUE={v}"
-                                        # )
-                                        final_filters["object"][k] = v
+                    # check if there are per-label filters set, if so override the final filters
+                    if isinstance(final_filters, dict) and isinstance(
+                        final_filters.get(type_), dict
+                    ):
+                        if ((typed_label_filters := final_filters[type_]["labels"]) and (label in typed_label_filters)
+                                and typed_label_filters[label]):
+                            logger.debug(
+                                f"{__lp} '{label}' IS IN {type_.upper()} per-label filters"
+                            )
+
+                            for k, v in typed_label_filters[label].items():
+                                if (
+                                    v is not None
+                                    and final_filters[type_][k] != v
+                                ):
+                                    logger.debug(
+                                        f"{__lp} Overriding {type_}:'{k}' [{final_filters[type_][k]}] "
+                                        f"with per-label {type_}:labels:{label}:{k}  [VALUE={v}]"
+                                    )
+                                    final_filters[type_][k] = v
                         else:
-                            logger.debug(f"{__lp} NOT IN per label filters")
+                            logger.debug(f"{__lp} '{label}' is NOT IN {type_.upper()} per-label filters")
 
                         final_filters = self.construct_filter(final_filters)
-                        # logger.debug(
-                        #     f"\n\nFINAL FILTERS 'AFTER' CONSTRUCTING [{type(final_filters)}]\n\n"
-                        # )
                         self.zone_filters[zone_name] = final_filters
                         # logger.debug(
                         #     f"\n\n'AFTER' SAVING TO ZONE FILTERS: {self.zone_filters=} \n\n"
                         # )
 
-                    type_filter: Union[
-                        OverRideObjectFilters,
-                        OverRideFaceFilters,
-                        OverRideAlprFilters,
-                        None,
-                    ] = None
+
                     if type_ == "object":
                         type_filter = final_filters.object
                     elif type_ == "face":
                         type_filter = final_filters.face
                     elif type_ == "alpr":
                         type_filter = final_filters.alpr
+                    # logger.debug(f"DBG>>>\n\n{global_filters = }\n\n{mon_filters = }\n\n"
+                    #              f"{zone_filters = }\n\n{final_filters = }\n\n{type_filter = }\n\n")
+                    # logger.debug(f"DBG>>>\n\n{self.zone_filters.get(zone_name) = }\n\n"
+                    #              f"{mon_cfg.zones.get(zone_name).filters = }\n\n")
 
-                    # logger.debug(
-                    #     f"{_lp} SORTED by {type_} -- FINAL filters => \n{type_filter}\n"
-                    # )
-                    pattern = type_filter.pattern
                     #
                     # Start filtering
                     #
+                    pattern = type_filter.pattern
                     lp = f"{__lp}pattern match::"
                     if match := pattern.match(label):
                         # When using .* in the pattern, the match.groups() will return an empty tuple
@@ -1364,7 +1361,7 @@ class ZMClient:
                                 ] = None
 
                                 # check total max area
-                                lp = f"{__lp}total max area::"
+                                lp = f"{__lp}total max area:"
                                 if tma := type_filter.total_max_area:
                                     if isinstance(tma, float):
                                         if tma >= 1.0:
@@ -1387,27 +1384,29 @@ class ZMClient:
                                             f"h*w of image ({h * w})"
                                         )
                                         max_object_area_of_image = h * w
+                                    perc_covered = (bbox_polygon.area / max_object_area_of_image) * 100.00
                                     if max_object_area_of_image:
                                         if bbox_polygon.area > max_object_area_of_image:
                                             logger.debug(
-                                                f"{lp} {bbox_polygon.area:.2f} is larger then the max allowed: "
-                                                f"{max_object_area_of_image:.2f},"
+                                                f"{lp} {bbox_polygon.area:.2f} ({perc_covered}%) is larger than the "
+                                                f"max allowed: {max_object_area_of_image:.2f},"
                                                 f"\n\nREMOVING REMOVING REMOVING REMOVING REMOVING REMOVING...\n\n"
                                             )
                                             continue
                                         else:
                                             logger.debug(
-                                                f"{lp} {bbox_polygon.area:.2f} is smaller then the TOTAL (image w*h) "
-                                                f"max allowed: {max_object_area_of_image:.2f}, ALLOWING..."
+                                                f"{lp} {bbox_polygon.area:.2f} ({perc_covered}%) is smaller than the "
+                                                f"TOTAL (image w*h) max allowed: {max_object_area_of_image:.2f}"
+                                                f", ALLOWING..."
                                             )
                                 else:
                                     logger.debug(f"{lp} no total_max_area set")
 
                                 # check total min area
-                                lp = f"{__lp}total min area::"
+                                lp = f"{__lp}total min area:"
                                 if tmia := type_filter.total_min_area:
                                     if isinstance(tmia, float):
-                                        if tmia >= 1.0:
+                                        if tmia > 1.0:
                                             tmia = 1.0
                                             min_object_area_of_image = h * w
                                         else:
@@ -1426,19 +1425,21 @@ class ZMClient:
                                             f"{lp} Unknown type for total_min_area, defaulting to 1 PIXEL"
                                         )
                                         min_object_area_of_image = 1
+                                    perc_covered = (bbox_polygon.area / min_object_area_of_image) * 100.00
                                     if min_object_area_of_image:
                                         if (
                                             bbox_polygon.area
                                             >= min_object_area_of_image
                                         ):
                                             logger.debug(
-                                                f"{lp} {bbox_polygon.area:.2f} is LARGER THEN OR EQUAL TO the "
-                                                f"TOTAL min allowed: {min_object_area_of_image:.2f}, ALLOWING..."
+                                                f"{lp} {bbox_polygon.area:.2f} ({perc_covered}%) is LARGER THEN OR "
+                                                f"EQUAL TO the TOTAL min allowed: {min_object_area_of_image:.2f}"
+                                                f", ALLOWING..."
                                             )
                                         else:
                                             logger.debug(
-                                                f"{lp} {bbox_polygon.area:.2f} is smaller then the TOTAL min allowed"
-                                                f": {min_object_area_of_image:.2f}, "
+                                                f"{lp} {bbox_polygon.area:.2f} ({perc_covered}%) is smaller then the "
+                                                f"TOTAL min allowed: {min_object_area_of_image:.2f}, "
                                                 f"\n\nREMOVING REMOVING REMOVING REMOVING REMOVING REMOVING...\n\n"
                                             )
                                             continue
@@ -1446,10 +1447,10 @@ class ZMClient:
                                     logger.debug(f"{lp} no total_min_area set")
 
                                 # check max area compared to zone
-                                lp = f"{__lp}zone max area::"
-                                if max_area := type_filter.max_area is not None:
+                                lp = f"{__lp}zone max area:"
+                                if (max_area := type_filter.max_area) is not None:
                                     if isinstance(max_area, float):
-                                        if max_area >= 1.0:
+                                        if max_area > 1.0:
                                             max_area = 1.0
                                             max_object_area_of_zone = zone_polygon.area
                                         else:
@@ -1467,34 +1468,36 @@ class ZMClient:
                                     else:
                                         logger.warning(
                                             f"{lp} Unknown type for max_area, defaulting to PIXELS "
-                                            f"of zone ({zone_polygon.area})"
+                                            f"of zone [{zone_polygon.area}]"
                                         )
                                         max_object_area_of_zone = zone_polygon.area
+
                                     if max_object_area_of_zone:
+                                        perc_covered = (bbox_polygon.intersection(zone_polygon).area / max_object_area_of_zone) * 100.00
                                         if (
                                             bbox_polygon.intersection(zone_polygon).area
                                             > max_object_area_of_zone
                                         ):
                                             logger.debug(
-                                                f"{lp} BBOX AREA [{bbox_polygon.area:.2f}] is larger than the "
-                                                f"max allowed: {max_object_area_of_zone:.2f},"
+                                                f"{lp} BBOX AREA [{bbox_polygon.area:.2f} ({perc_covered}%)] is larger "
+                                                f"than the max: {max_object_area_of_zone},"
                                                 f"\n\nREMOVING REMOVING REMOVING REMOVING REMOVING REMOVING...\n\n"
                                             )
                                             continue
                                         else:
                                             logger.debug(
-                                                f"{lp} '{label}' BBOX AREA [{bbox_polygon.area:.2f}] is smaller "
-                                                f"than the "
-                                                f"max allowed: {max_object_area_of_zone:.2f}, ALLOWING..."
+                                                f"{lp} '{label}' BBOX AREA [{bbox_polygon.area:.2f} ({perc_covered}%)] "
+                                                f"is smaller than the max allowed: {repr(max_object_area_of_zone)}, "
+                                                f"ALLOWING..."
                                             )
                                 else:
                                     logger.debug(f"{lp} no max_area set")
 
                                 # check min area compared to zone
-                                lp = f"{__lp}zone min area::"
-                                if min_area := type_filter.min_area is not None:
+                                lp = f"{__lp}zone min area:"
+                                if (min_area := type_filter.min_area) is not None:
                                     if isinstance(min_area, float):
-                                        if min_area >= 1.0:
+                                        if min_area > 1.0:
                                             min_area = 1.0
                                             min_object_area_of_zone = zone_polygon.area
                                         else:
@@ -1502,12 +1505,11 @@ class ZMClient:
                                                 min_area * zone_polygon.area
                                             )
                                             logger.debug(
-                                                f"{lp} converted {min_area * 100.00}% of '{zone_name}'->{zone_polygon.area:.5f}"
-                                                f" to {min_object_area_of_zone} pixels",
+                                                f"{lp} converted {min_area * 100.00:.2f}% of '{zone_name}'->"
+                                                f"{zone_polygon.area:.2f} to {min_object_area_of_zone} pixels"
                                             )
                                         if (
                                             min_object_area_of_zone
-                                            and min_object_area_of_zone
                                             > zone_polygon.area
                                         ):
                                             min_object_area_of_zone = zone_polygon.area
@@ -1515,29 +1517,36 @@ class ZMClient:
                                         min_object_area_of_zone = min_area
                                     else:
                                         min_object_area_of_zone = 1
-                                    if (
-                                        min_object_area_of_zone
-                                        and bbox_polygon.intersection(zone_polygon).area
-                                        > min_object_area_of_zone
-                                    ):
-                                        logger.debug(
-                                            f"{lp} '{label}' BBOX AREA [{bbox_polygon.area:.5f}] is larger then the "
-                                            f"min allowed: {min_object_area_of_zone:.5f}, ALLOWING..."
-                                        )
+                                    perc_covered = (bbox_polygon.intersection(zone_polygon).area /
+                                                    min_object_area_of_zone) * 100.00
 
+                                    if min_object_area_of_zone:
+                                        if (
+                                            bbox_polygon.intersection(zone_polygon).area
+                                            > min_object_area_of_zone
+                                        ):
+                                            logger.debug(
+                                                f"{lp} '{label}' BBOX AREA [{bbox_polygon.area:.2f} ({perc_covered:.2f}%)] "
+                                                f"is larger then the min allowed: {repr(min_object_area_of_zone)}, "
+                                                f"ALLOWING..."
+                                            )
+
+                                        else:
+                                            logger.debug(
+                                                f"{lp} '{label}' BBOX AREA [{bbox_polygon.area:.2f} ({perc_covered:.2f}%)] "
+                                                f"is smaller then the min allowed: {min_object_area_of_zone:.2f} ("
+                                                f"{(bbox_polygon.area / min_object_area_of_zone)*100.00:.2f}%),"
+                                                f"\n\nREMOVING REMOVING REMOVING REMOVING REMOVING REMOVING...\n\n"
+                                            )
+                                            continue
                                     else:
-                                        logger.debug(
-                                            f"{lp} '{label}' BBOX AREA [{bbox_polygon.area:.5f}] is smaller then the "
-                                            f"min allowed: {min_object_area_of_zone:.5f},"
-                                            f"\n\nNO MATCH, SKIPPING...\n\n"
-                                        )
-                                        continue
+                                        logger.debug(f"{lp} no min_object_area_of_zone set")
                                 else:
                                     logger.debug(f"{lp} no min_area set")
 
                                 # color filtering
-                                logger.debug(f'DBG>>> this is where color filtering should go: {color = } // '
-                                             f'{g.config.detection_settings.color = }')
+                                logger.debug(f"DBG>>> this is where color filtering should go: {color = } // "
+                                             f"{g.config.detection_settings.color = }")
 
                                 s_o: Optional[bool] = None
                                 s_o_reason: Optional[str] = "<DFLT>"
@@ -1546,34 +1555,33 @@ class ZMClient:
                                     s_o = False
                                 elif s_o in [True, False]:
                                     s_o_reason = "global"
-                                mon_filt = g.config.monitors.get(g.mid)
-                                zone_filt: Optional[MonitorZones] = None
-                                if mon_filt and zone_name in mon_filt.zones:
-                                    zone_filt = mon_filt.zones[zone_name]
+                                zone_cfg: Optional[MonitorZones] = None
+                                if mon_cfg and zone_name in mon_cfg.zones:
+                                    zone_cfg = mon_cfg.zones[zone_name]
 
                                 # Override with monitor filters than zone filters
                                 if s_o is True:
-                                    if mon_filt and mon_filt.static_objects:
-                                        if mon_filt.static_objects.enabled is False:
+                                    if mon_cfg and mon_cfg.static_objects:
+                                        if mon_cfg.static_objects.enabled is False:
                                             s_o = False
                                             s_o_reason = "monitor"
                                 elif s_o is False:
-                                    if mon_filt and mon_filt.static_objects:
-                                        if mon_filt.static_objects.enabled is True:
+                                    if mon_cfg and mon_cfg.static_objects:
+                                        if mon_cfg.static_objects.enabled is True:
                                             s_o = True
                                             s_o_reason = "monitor"
                                 # zone filters override monitor filters
                                 if s_o is False:
                                     if (
-                                        zone_filt
-                                        and zone_filt.static_objects.enabled is True
+                                        zone_cfg
+                                        and zone_cfg.static_objects.enabled is True
                                     ):
                                         s_o = True
                                         s_o_reason = "zone"
                                 elif s_o is True:
                                     if (
-                                        zone_filt
-                                        and zone_filt.static_objects.enabled is False
+                                        zone_cfg
+                                        and zone_cfg.static_objects.enabled is False
                                     ):
                                         s_o = False
                                         s_o_reason = "zone"
