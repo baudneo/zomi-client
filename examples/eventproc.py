@@ -180,7 +180,6 @@ if __name__ == "__main__":
 
     final_msg = f"perf:FINAL: Event processing took {time.time() - _start:.5f} seconds"
     if not loop.is_closed():
-        loop.run_until_complete(zm_client.clean_up())
         logger.info(final_msg)
         loop.close()
     else:

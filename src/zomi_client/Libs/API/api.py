@@ -185,6 +185,7 @@ class ZMAPI:
         self.refresh_token: Optional[str] = ""
         self.config: ZoneMinderSettings.ZMAPISettings = config.api
         self.api_url: Optional[str] = config.api.api_url
+        logger.debug(f"\n\nDBG>>> API URL: {self.api_url}\n\n{config.api = }\n\n")
         self.portal_url: Optional[str] = config.portal_url
 
         self.api_version: Optional[str] = ""
