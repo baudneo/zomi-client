@@ -122,12 +122,13 @@ class MLAPI:
 
     @cached_token.setter
     def cached_token(self, data: dict):
+        lp = f"{self.lp}cache:"
         try:
             pickle.dump(data, self.cached_token_path.open("wb"))
         except Exception as e:
-            logger.error(f"{self.lp} Error saving token to cache: {e}")
+            logger.error(f"{lp} error saving token to cache: {e}")
         else:
-            logger.debug(f"{self.lp} Token saved to cache: {self.cached_token_path}")
+            logger.debug(f"{lp} token saved to cache: {self.cached_token_path}")
 
     @property
     def base_url(self) -> str:
@@ -143,7 +144,7 @@ class MLAPI:
         ml_token = None
         url = self.base_url + "/login"
         logger.debug(
-            f"{lp} logging in @ "
+            f"{lp} '{self.name}' @ "
             f"{url if not g.config.logging.sanitize.enabled else g.config.logging.sanitize.replacement_str}"
         )
         try:
@@ -163,7 +164,7 @@ class MLAPI:
                         # Response is always JSON
                         resp = await r.json()
                         if ml_token := resp.get("access_token"):
-                            logger.info(f"{lp} login success!")
+                            logger.info(f"{lp} SUCCESS!")
                             self.token = ml_token
                             self.cached_token = resp
                         else:
