@@ -527,7 +527,7 @@ class ZMClient:
         asyncio.get_event_loop().stop()
 
     async def clean_up(self):
-        logger.debug(f"closing api sessions and db connection")
+        logger.debug(f"closing API and DB connection(s)")
         # self.image_pipeline.exit()
         await self.api.clean_up()
         self.db.clean_up()
@@ -748,7 +748,7 @@ class ZMClient:
         if eid:
             g.eid = eid
             logger.info(
-                f"{lp} Running detection for event {eid}, obtaining monitor info using DB and API..."
+                f"{lp} Running detection for event {eid}, obtaining monitor info using ZoneMinder DB..."
             )
 
             await self._get_db_data(eid)
@@ -1614,7 +1614,8 @@ class ZMClient:
 
                         else:
                             logger.debug(
-                                f"{lp} NOT matched in RegEx pattern [{pattern.pattern}], continuing to next zone..."
+                                f"{lp} NOT matched in RegEx pattern GROUPS [{pattern.pattern}], "
+                                f"continuing to next zone..."
                             )
                             continue
 
