@@ -287,7 +287,7 @@ class APIImagePipeLine(PipeLine):
                     logger.debug(f"{lp} sleeping for {self.options.delay} second(s)")
                     time.sleep(self.options.delay)
 
-        return self._process_frame(skip=True)
+        return self._process_frame()
 
     @property
     def frames_processed(self):
@@ -303,7 +303,7 @@ class ZMSImagePipeLine(PipeLine):
 
     http://localhost/zm/cgi-bin/nph-zms?mode=single&monitor=1&user=USERNAME&pass=PASSWORD"
     works with token='<ACCESS TOKEN>' as well
-    mode=jpeg or single
+    mode=jpeg or single (single mode 'fixed' in ZM commit: https://github.com/ZoneMinder/zoneminder/commit/d968e243ff0079bae5c9eb4519c022bab7cbf5a9)
     monitor=<mid> will ask for monitor mode
     event=<eid> will ask for event mode
     frame=<fid> will ask for a specific frame from an event (implies event mode)
