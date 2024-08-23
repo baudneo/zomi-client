@@ -39,6 +39,15 @@ class PipeLine:
     increment_by: Optional[Union[int, float]] = None
     current_frame: int = 1
 
+    @staticmethod
+    def parse_response(response: bytes) -> Tuple[Optional[bytes], Optional[str]]:
+        if response.startswith(b"\xff\xd8\xff"):
+            logger.debug(f"Response is a JPEG formatted image!")
+            return response, f"mid_{g.mid}_rand_{random.randint(0,1000)}.jpg"
+        else:
+            logger.debug(f"Response is not a JPEG formatted image!")
+            return None, None
+
     async def get_event_data(self, msg: Optional[str] = None):
         """Calls global DB get event data"""
         if msg:
