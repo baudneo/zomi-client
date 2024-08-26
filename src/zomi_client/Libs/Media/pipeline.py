@@ -356,7 +356,7 @@ class ZMSImagePipeLine(PipeLine):
 
         if not g.past_event:
             # Live event - Pull images from live stream
-            url = f"{self.url}?mode=single&monitor={g.mid}&connkey={random.randint(100000, 999999)}"
+            url = f"{self.url}?mode=single&monitor={g.mid}"
             _sep = "-_/.,`~<>="
             rand_str = "".join(random.choice(letters) for i in range(8))
             rand_int = random.randint(1, 999999)
@@ -368,7 +368,7 @@ class ZMSImagePipeLine(PipeLine):
                 url=url, type_action="post", timeout=timeout
             )
             end_img_req = time.time() - start_img_req
-            logger.debug(f"perf:{lp} ZMS request took: {end_img_req:.5f}")
+            logger.debug(f"perf:{lp} ZMS request {url} took: {end_img_req:.5f}")
             return_img = None
             img_reason = ""
             if not api_response:
@@ -400,7 +400,7 @@ class ZMSImagePipeLine(PipeLine):
             else:
                 logger.debug(f"{lp} processing first frame!")
 
-            url = f"{self.url}?mode=jpeg&event={g.eid}&frame={self.current_frame}&connkey={random.randint(100000, 999999)}"
+            url = f"{self.url}?mode=jpeg&event={g.eid}&frame={self.current_frame}"
             past_perf = time.time()
 
             for image_grab_attempt in range(self.max_attempts):
@@ -416,7 +416,7 @@ class ZMSImagePipeLine(PipeLine):
                 )
                 # logger.debug(f"{lp} URL: {url}")
                 end_perf = time.time()
-                logger.debug(f"perf:{lp} ZMS request took: {end_perf - past_perf:.5f}")
+                logger.debug(f"perf:{lp} ZMS request {url} took: {end_perf - past_perf:.5f}")
                 resp_msg = ""
                 # Cover unset and None
                 if not api_response:
