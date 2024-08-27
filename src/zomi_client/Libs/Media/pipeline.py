@@ -26,7 +26,7 @@ class PipeLine:
     _event_data_recursions: int = 0
     options: Union[APIPullMethod, ZMSPullMethod, None] = None
     event_tot_frames: int = 0
-    attempted_fids: List[int] = list()
+    attempted_fids: List[Union[int, str]] = list()
     start_datetime: Optional[datetime] = None
     event_end_datetime: Optional[datetime] = None
     event_tot_seconds: Optional[float] = None
