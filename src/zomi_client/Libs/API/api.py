@@ -692,7 +692,7 @@ class ZMAPI:
                         # if not content_length:
                         #     logger.debug(f"{lp} no content-length - is this an empty response? - {content_length=}")
 
-                        logger.debug(f"{lp} iterating chunks")
+                        logger.debug(f"{lp} iterating chunks as transfer encoding = chunked")
 
                         chunk_size = 1024
                         _resp = b""
