@@ -879,18 +879,19 @@ class ZMClient:
                         f" which is different from the monitor resolution of {mon_res}! "
                         f"Attempting to scale zone to match monitor resolution..."
                     )
-                    logger.debug(f"{mon_res = } -- {zone_resolution = }")
-                    xfact: float = mon_res[1] / zone_resolution[1] or 1.0
-                    yfact: float = mon_res[0] / zone_resolution[0] or 1.0
+
+                    xfact = mon_res[1] / zone_resolution[1] if zone_resolution[1] != 0 else 1.0
+                    yfact = mon_res[0] / zone_resolution[0] if zone_resolution[0] != 0 else 1.0
+
                     logger.debug(
-                        f"{_lp} rescaling polygons: using x_factor: {xfact} and y_factor: {yfact}"
+                        f"{_lp} Rescaling polygons using x_factor: {xfact} and y_factor: {yfact} "
+                        f"(mon_res={mon_res}, zone_res={zone_resolution})"
                     )
-                    zone_points = [
-                        (int(x * xfact), int(y * yfact)) for x, y in zone_points
-                    ]
-                    logger.debug(
-                        f"{_lp} Zone '{zone_name}' points adjusted to: {zone_points}"
-                    )
+
+                    zone_points = [(int(x * xfact), int(y * yfact)) for x, y in zone_points]
+
+                    logger.debug(f"{_lp} Zone '{zone_name}' points adjusted to: {zone_points}")
+
                     self.zones[zone_name].points = zone_points
             del zones
         image: Union[bytes, np.ndarray, None]
@@ -905,7 +906,7 @@ class ZMClient:
         # Use an async generator to get images from the image pipeline
         break_out: bool = False
         image_start = time.time()
-        async for image, image_name in self.image_pipeline.image_generator():
+        async for image, image_name in self.image_pipeline.generate_image():
             image_loop += 1
             if break_out is True:
                 logger.debug(
