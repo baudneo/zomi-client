@@ -106,21 +106,20 @@ class PipeLine:
     ) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
         """Process the frame, increment counters, and return the image if there is one"""
         lp = f"{LP}process_frame:"
-        self.attempted_fids.append(self.current_frame)
-        if end:
-            logger.error(f"{lp} end has been called, no more images to process!")
-            return False, None
-
-        self.current_frame = self.current_frame + self.increment_by
-        logger.debug(
-            f"{lp} incrementing next frame ID to read by {self.increment_by} = {self.current_frame}"
-        )
         if image:
-            img_name = f"mid_{g.mid}_random_{random.randint(0,1000)}.jpg"
+            img_name = f"mid_{g.mid}-{self.attempted_fids[-1]}.jpg" if not g.past_event else self.current_frame
             # (bytes, image_file_name)
             return (
                 image,
                 img_name,
+            )
+        if end:
+            logger.error(f"{lp} end has been called, no more images to process!")
+            return False, None
+        if g.past_event:
+            self.current_frame = self.current_frame + self.increment_by
+            logger.debug(
+                f"{lp} incrementing next frame ID to read by {self.increment_by} = {self.current_frame}"
             )
         return None, None
 
