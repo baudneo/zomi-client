@@ -124,16 +124,15 @@ class PipeLine:
             )
         return None, None
 
-    async def image_generator(
+    async def generate_image(
         self,
     ) -> Generator[Tuple[Optional[Union[bytes, bool]], Optional[str]]]:
         """Generator to return images from the source"""
-        logger.debug(f"{LP}image_generator: STARTING -- {g.past_event=}")
         while True:
             yield await self.get_image()
 
     async def get_image(self) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
-        raise NotImplementedError
+        pass
 
 
 class APIImagePipeLine(PipeLine):
