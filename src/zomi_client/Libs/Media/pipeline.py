@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional, Union, TYPE_CHECKING, Tuple, Any, Dict, List, Generator
 
+import aiohttp
 import numpy as np
 
 from ...Log import CLIENT_LOGGER_NAME
