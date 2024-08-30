@@ -103,11 +103,13 @@ class PipeLine:
         self,
         image: bytes = None,
         end: bool = False,
+        img_name: Optional[str] = None,
     ) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
         """Process the frame, increment counters, and return the image if there is one"""
         lp = f"{LP}process_frame:"
         if image:
-            img_name = f"mid_{g.mid}-{self.attempted_fids[-1]}.jpg" if not g.past_event else self.current_frame
+            if not img_name:
+                img_name = f"mid_{g.mid}-{self.attempted_fids[-1]}.jpg" if not g.past_event else self.current_frame
             # (bytes, image_file_name)
             return (
                 image,
