@@ -436,7 +436,6 @@ class ZMSImagePipeLine(PipeLine):
                     else:
                         logger.warning(f"{lp} no boundary found in content-type header! -> {content_type}")
                 else:
-                    logger.debug(f"{lp} reading non-multipart response...")
                     iterated_resp = await resp.read()
 
             except aiohttp.ClientResponseError as err:
