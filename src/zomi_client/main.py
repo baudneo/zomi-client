@@ -820,7 +820,7 @@ class ZMClient:
         else:
             # There is absolutely no ML config defined for this monitor, ML will never run.
             logger.critical(f"{lp} Monitor {g.mid} not found in monitors: section!")
-        # make sure we have some models defeined to run on.
+        # make sure we have some models defined to run on.
         if not models:
             if self.config.detection_settings.models:
                 logger.debug(
