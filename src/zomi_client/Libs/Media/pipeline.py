@@ -144,6 +144,7 @@ class APIImagePipeLine(PipeLine):
         self,
         options: APIPullMethod,
     ):
+        self.last_snapshot_id: Optional[int] = None
         lp = f"{LP}API:init::"
         assert options, f"{lp} no stream options provided!"
         super().__init__()
@@ -173,6 +174,7 @@ class APIImagePipeLine(PipeLine):
         self.total_max_frames = self.options.max_frames
 
     async def get_image(self) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
+        ret_img_name: str = ""
         if self.frames_attempted >= self.total_max_frames:
             logger.error(
                 f"max_frames ({self.total_max_frames}) has been reached, stopping!"
@@ -185,9 +187,7 @@ class APIImagePipeLine(PipeLine):
         lp = f"{LP}read:"
         if self.frames_attempted > 0:
             logger.debug(
-                f"{lp} [{self.frames_processed}/{self.total_max_frames} frames processed: {self._processed_fids}] "
-                f"- [{self.frames_skipped}/{self.total_max_frames} frames skipped: {self._skipped_fids}] - "
-                f"[{self.frames_attempted}/{self.total_max_frames} frames attempted: {self.attempted_fids}]"
+                f"{lp} [{self.frames_processed}/{self.total_max_frames} frames processed: {self.attempted_fids}]"
             )
         else:
             logger.debug(f"{lp} processing first frame!")
@@ -211,8 +211,8 @@ class APIImagePipeLine(PipeLine):
                     msg=f"grabbing data for snapshot comparisons..."
                 )
                 if curr_snapshot := int(g.Event.get("MaxScoreFrameId", 0)):
-                    if self.last_snapshot_id:
-                        if curr_snapshot > self.last_snapshot_id:
+                    if self.last_snapshot_id is not None:
+                        if curr_snapshot != self.last_snapshot_id:
                             logger.debug(
                                 f"{lp} current snapshot frame id is not the same as the last snapshot id "
                                 f"CURR:{curr_snapshot} - PREV:{self.last_snapshot_id}, grabbing new snapshot image"
@@ -230,13 +230,12 @@ class APIImagePipeLine(PipeLine):
                     )
 
         #  Check if we have already processed this frame ID 
-        if self.current_frame in self._processed_fids:
+        if self.current_frame in self.attempted_fids:
             logger.debug(
                 f"{lp} skipping Frame ID: '{self.current_frame}' as it has already been"
                 f" processed for event {g.eid}"
             )
-            return self._process_frame(skip=True)
-        #  SET URL TO GRAB IMAGE FROM 
+            return self._process_frame()
         logger.debug(f"Calculated Frame ID as: {self.current_frame}")
         portal_url = str(g.api.portal_base_url)
         if portal_url.endswith("/"):

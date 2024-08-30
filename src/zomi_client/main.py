@@ -2081,7 +2081,7 @@ class ZMClient:
                         )
                         if _auth := po._push_auth:
                             view_url = f"{view_url}&{_auth}"
-                        po.request_data.url = view_url
+                        po.request_data.base_url = view_url
 
                     # try:
                     #     # do custom sound
