@@ -297,10 +297,9 @@ class APIImagePipeLine(PipeLine):
 
 
 class ZMSImagePipeLine(PipeLine):
-    max_frames: Optional[int] = 0
     """
     This image pipeline is designed to work with ZM CGI script nph-zms.
-    nph = No Parsed Headers
+    nph = No Parsed Headers (the CGI script handles all response data, bypassing the server for efficiency)
     **nph-zms is symlinked to zms**
 
     http://localhost/zm/cgi-bin/nph-zms?mode=single&monitor=1&user=USERNAME&pass=PASSWORD"
@@ -308,44 +307,175 @@ class ZMSImagePipeLine(PipeLine):
     mode=jpeg or single (single mode 'fixed' in ZM commit: https://github.com/ZoneMinder/zoneminder/commit/d968e243ff0079bae5c9eb4519c022bab7cbf5a9)
     monitor=<mid> will ask for monitor mode
     event=<eid> will ask for event mode
-    frame=<fid> will ask for a specific frame from an event (implies event mode)
+    frame=<fid> will ask for a specific frame from an event (event mode)
     """
+
+    max_frames: Optional[int] = 0
 
     def __init__(
         self,
         options: ZMSPullMethod,
     ):
-        lp = f"{LP}ZMS:init::"
+        self.live_frame: int = 0
+        self.lp = f"{LP}ZMS:"
+        lp = f"{self.lp}init::"
         assert options, f"{lp} no stream options provided!"
         super().__init__()
         #  INIT START 
+        self.async_session = g.api.async_session
         self.options = options
-        self.url: Optional[str] = str(options.url) if options.url else None
+        self.base_url: Optional[str] = str(options.url) if options.url else None
+        self.built_url: Optional[str] = None
         logger.debug(f"{lp} options: {self.options}")
 
-        self.max_attempts = 1
-        self.max_attempts = options.attempts
+        self.max_attempts = options.attempts or 1
         self.max_attempts_delay = options.delay
         self.max_frames = options.max_frames
-        # Process URL, if it is empty grab API portal and append default path
-        if not self.url:
+        # Process URL, if it is empty grab ZM portal and append ZM_PATH_CGI
+        if not self.base_url:
             logger.debug(
-                f"{lp} no URL provided, constructing from API portal and ZMS_CGI_PATH from zm.conf"
+                f"{lp} no URL provided, constructing from ZM portal (config file) and ZMS_CGI_PATH from zm.conf files"
             )
             cgi_sys_path = Path(g.db.cgi_path)
             # ZM_PATH_CGI=/usr/lib/zoneminder/cgi-bin
             portal_url = str(g.api.portal_base_url)
             if portal_url.endswith("/"):
                 portal_url = portal_url[:-1]
-            self.url = f"{portal_url}/{cgi_sys_path.name}/nph-zms"
+            self.base_url = f"{portal_url}/{cgi_sys_path.name}/nph-zms"
 
         if g.past_event:
-            # if this is a past (non live) event, grab event data
+            # if this is a past (non-live) event, grab event data
             # use a task so we don't block the main thread
-            import asyncio
-
             loop = asyncio.get_running_loop()
             loop.create_task(self.get_event_data())
+
+
+    async def _req_img(
+        self,
+        url: Optional[str] = None,
+        timeout: int = 15,
+    ):
+        if not isinstance(g.api.async_session, aiohttp.ClientSession):
+            self.async_session = g.api.async_session = aiohttp.ClientSession()
+        assert isinstance(self.async_session, aiohttp.ClientSession), f"Invalid session type: {type(self.async_session)}"
+
+        lp: str = self.lp
+        verify_ssl = g.api.config.ssl_verify
+        if verify_ssl is None:
+            verify_ssl = False
+        query = {}
+        if g.api.access_token:
+            query["token"] = g.api.access_token
+        resp: Optional[aiohttp.ClientResponse] = None
+        async with self.async_session.post(
+            url,
+            params=query,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+            resp_status = resp.status
+            iterated_resp: Optional[bytes] = None
+            boundary: Optional[bytes] = None
+            nph_headers: Union[Dict, bytes, None] = None
+            logger.debug(f"{lp} response status: {resp_status} -- headers: {resp.headers}")
+            try:
+                resp.raise_for_status()
+                # ZMS embeds its own headers, these are the actual headers from Apache
+                # If mode = jpeg, ZMS will send a stream of images that begin with headers
+                content_type = resp.headers.get("content-type")
+                content_length = resp.headers.get("content-length")
+                if content_length is not None:
+                    content_length = int(content_length)
+                transfer_encoding = resp.headers.get("Transfer-Encoding")
+                if "multipart/x-mixed-replace" in content_type:
+                    # ZMS mode=jpeg , get the boundary
+                    if "boundary=" in content_type:
+                        boundary = f"{content_type.split('boundary=')[1]}".encode()
+                        # RFC calls for a leading '--' on the boundary
+                        boundary = b"--" + boundary
+                        img_type = ""
+                        img_length = 0
+                        chunk_size = 1024
+                        iterated_resp = b""
+                        _begin = False
+                        i = 0
+                        logger.debug(f"{lp} iterating chunks (size: {chunk_size}) as ZMS mode=jpeg sends a stream of "
+                                     f"images that begin with headers (nph)")
+                        async for chunk in resp.content.iter_chunked(chunk_size):
+                            i += 1
+                            if boundary and boundary in chunk:
+                                if _begin is False:
+                                    _begin = True
+                                    # strip out the first boundary
+                                    _raw_resp = chunk.split(boundary + b"\r\n")[1]
+                                    # b'--ZoneMinderFrame\r\nContent-Type: image/jpeg\r\n
+                                    # Content-Length: 134116\r\n\r\n
+                                    # \xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xdb\x00C\x00
+                                    nph_headers, iterated_resp = _raw_resp.split(b"\r\n\r\n")
+                                    nph_headers = {
+                                        x.decode()
+                                        .split(": ")[0]: x.decode()
+                                        .split(": ")[1]
+                                        for x in nph_headers.split(b"\r\n")
+                                        if x
+                                    }
+                                    logger.debug(f"{lp} nph_headers = {nph_headers}")
+                                    img_type = nph_headers.get("Content-Type")
+                                    img_length = int(nph_headers.get("Content-Length"))
+                                    if not iterated_resp:
+                                        logger.warning(f"{lp} no data found after headers in first chunk!")
+                                    continue
+                                else:
+                                    logger.debug(
+                                        f"{lp} boundary found in chunk (size: {chunk_size}) #{i}, "
+                                        f"breaking out of stream (mode=jpeg) reading loop..."
+                                    )
+                                    iterated_resp += chunk.split(b"\r\n" + boundary)[0]
+                                    _begin = False
+                                    break
+
+                            iterated_resp += chunk
+                    else:
+                        logger.warning(f"{lp} no boundary found in content-type header! -> {content_type}")
+                else:
+                    logger.debug(f"{lp} reading non-multipart response...")
+                    iterated_resp = await resp.read()
+
+            except aiohttp.ClientResponseError as err:
+                # ZM throw 403 when token is expired, use existing refresh logic.
+                # todo: async login
+                if resp_status in {401, 403}:
+                    if g.api.access_token:
+                        logger.error(f"{lp} {resp_status} {'Unauthorized' if resp_status == 401 else 'Forbidden'}, "
+                                     f"attempting to re-authenticate")
+                        g.api._login()
+                        logger.debug(f"{lp} re-authentication complete, retrying async request")
+                        return await self._req_img(url=self.built_url, timeout=timeout)
+                    else:
+                        logger.exception(f"{lp} {resp_status} {'Unauthorized' if resp_status == 401 else 'Forbidden'}, "
+                                         f"no access token found?")
+                elif resp_status == 404:
+                    logger.warning(f"{lp} Got 404 (Not Found), are you sure the url is correct? -> {self.built_url}")
+                else:
+                    logger.warning(
+                        f"{lp} NOT 200|401|403|404 - Code={resp_status} error: {err}"
+                    )
+
+            except asyncio.TimeoutError as err:
+                logger.error(f"{lp} asyncio.TimeoutError: {err}", exc_info=True)
+
+            except Exception as err:
+                logger.error(f"{lp} Generic Exception: {err}", exc_info=True)
+
+            else:
+                if content_length is not None:
+                    if content_length > 0:
+                        if isinstance(iterated_resp, str):
+                            if iterated_resp.casefold().startswith("no frame found"):
+                                #  resp.text = 'No Frame found for event(69129) and frame id(280)']
+                                logger.warning(
+                                    f"{lp} Frame was not found by ZMS! >>> {resp.text}"
+                                )
+                return iterated_resp
 
     async def get_image(self) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
         if self.frames_attempted >= self.max_frames:
@@ -353,85 +483,69 @@ class ZMSImagePipeLine(PipeLine):
             return False, None
 
         lp = f"{LP}ZMS:read:"
-        timeout = g.config.zoneminder.pull_method.zms.timeout or 15
-        letters = string.ascii_lowercase
+        timeout = self.options.timeout or 15
 
         if not g.past_event:
-            # Live event - Pull images from live stream
-            url = f"{self.url}?mode=single&monitor={g.mid}"
-            _sep = "-_/.,`~<>="
-            rand_str = "".join(random.choice(letters) for i in range(8))
-            rand_int = random.randint(1, 999999)
-            sep = random.choice(_sep)
-            self.attempted_fids.append(f"{rand_str}{sep}{rand_int}")
-
+            self.live_frame += 1
+            # Live event - Pull live image from monitor
+            self.built_url = f"{self.base_url}?mode=single&monitor={g.mid}"
+            fid = f"live_{self.live_frame}"
+            self.attempted_fids.append(fid)
             start_img_req = time.time()
-            api_response = await g.api.make_async_request(
-                url=url, type_action="post", timeout=timeout
-            )
+            zms_response = await self._req_img(self.built_url, timeout)
+            # zms_response = await g.api.make_async_request(
+            #     url=url, type_action="post", timeout=timeout
+            # )
             end_img_req = time.time() - start_img_req
-            logger.debug(f"perf:{lp} ZMS request {url} took: {end_img_req:.5f}")
-            return_img = None
-            img_reason = ""
-            if not api_response:
-                img_reason = f" no response received!"
-
-            elif isinstance(api_response, bytes):
-                if api_response.startswith(b"\xff\xd8\xff"):
-                    logger.debug(f"{lp} Response is a JPEG formatted image!")
-                    return_img = api_response
-                # else:
-                #     logger.debug(
-                #         f"{lp} bytes data returned -> {api_response}"
-                #     )
-
+            logger.debug(f"perf:{lp} ZMS request {self.built_url} took: {end_img_req:.5f}")
+            no_img_reason = ""
+            if not zms_response:
+                no_img_reason = f" no response received!"
+            elif isinstance(zms_response, bytes):
+                if zms_response.startswith(b"\xff\xd8\xff"):
+                    logger.debug(f"{lp} Response is a JPEG formatted image")
+                    return zms_response, f"mid_{g.mid}-{fid}.jpg"
+                else:
+                    no_img_reason = f" Non JPEG bytes data returned -> {zms_response}"
             else:
-                img_reason = f" response is not bytes -> Type: {type(api_response)} -- {api_response = }"
-
-            if return_img:
-                return return_img, f"mid_{g.mid}_rand_{random.randint(0,1000)}.jpg"
-
-            logger.warning(f"{lp} image was not retrieved!{img_reason}")
-
+                no_img_reason = f" response is not bytes -> Type: {type(zms_response)} -- {zms_response = }"
+            logger.warning(f"{lp} image was not retrieved!{no_img_reason}")
             return None, None
 
         else:
-            # Past event, iterate event using frame id's (target 1 fps)
-            if self.frames_attempted > 0:
-                pass
-            else:
+            # single mode should work for past events now. Keep this stream logic for future use
+            # Past event, use mode=jpeg, iterate event using frame id's (target 1 fps)
+            if self.frames_attempted == 0:
                 logger.debug(f"{lp} processing first frame!")
 
-            url = f"{self.url}?mode=jpeg&event={g.eid}&frame={self.current_frame}"
+            self.built_url = f"{self.base_url}?mode=single&event={g.eid}&frame={self.current_frame}"
             past_perf = time.time()
 
             for image_grab_attempt in range(self.max_attempts):
                 image_grab_attempt += 1
-                past_or_live = "past" if g.past_event else "live"
-                pol2 = "event data" if g.past_event else "frame buffer"
                 logger.debug(
-                    f"{lp} attempt #{image_grab_attempt}/{self.max_attempts} to grab {past_or_live} image from mid: "
-                    f"{g.mid} {pol2}"
+                    f"{lp} attempt #{image_grab_attempt}/{self.max_attempts} to grab past image from mid: "
+                    f"{g.mid} event data"
                 )
-                api_response = await g.api.make_async_request(
-                    url=url, type_action="post", timeout=timeout
+                zms_response = await self._req_img(
+                    url=self.built_url, timeout=timeout
                 )
                 # logger.debug(f"{lp} URL: {url}")
                 end_perf = time.time()
-                logger.debug(f"perf:{lp} ZMS request {url} took: {end_perf - past_perf:.5f}")
+                logger.debug(f"perf:{lp} ZMS request {self.built_url} took: {end_perf - past_perf:.5f}")
                 resp_msg = ""
                 # Cover unset and None
-                if not api_response:
+                if not zms_response:
                     # if isinstance(api_response, aiohttp.ClientResponse):
                     #     resp_msg = f"<<response code={api_response.status}>> - response={api_response}"
                     resp_msg = f"no response received!"
 
-                elif isinstance(api_response, bytes):
-                    if api_response.startswith(b"\xff\xd8\xff"):
-                        logger.debug(f"{lp} Response is a JPEG formatted image!")
-                        return self._process_frame(image=api_response)
+                elif isinstance(zms_response, bytes):
+                    if zms_response.startswith(b"\xff\xd8\xff"):
+                        logger.debug(f"{lp} Response is a JPEG formatted image")
+                        return self._process_frame(image=zms_response)
                 else:
-                    resp_msg = f"{lp} response is not bytes -> {type(api_response) = } -- {api_response = }"
+                    resp_msg = f"{lp} response is not bytes -> {type(zms_response) = } -- {zms_response = }"
 
                 if resp_msg:
                     str_delay = ''
