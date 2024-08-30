@@ -542,6 +542,7 @@ class ZMSImagePipeLine(PipeLine):
                 elif isinstance(zms_response, bytes):
                     if zms_response.startswith(b"\xff\xd8\xff"):
                         logger.debug(f"{lp} Response is a JPEG formatted image")
+                        self.attempted_fids.append(self.current_frame)
                         return self._process_frame(image=zms_response)
                 else:
                     resp_msg = f"{lp} response is not bytes -> {type(zms_response) = } -- {zms_response = }"
