@@ -347,8 +347,7 @@ class ZMSImagePipeLine(PipeLine):
         if g.past_event:
             # if this is a past (non-live) event, grab event data
             # use a task so we don't block the main thread
-            loop = asyncio.get_running_loop()
-            loop.create_task(self.get_event_data())
+            asyncio.get_running_loop().create_task(self.get_event_data())
 
 
     async def _req_img(
@@ -367,7 +366,7 @@ class ZMSImagePipeLine(PipeLine):
         query = {}
         if g.api.access_token:
             query["token"] = g.api.access_token
-        resp: Optional[aiohttp.ClientResponse] = None
+        raw_resp: Optional[aiohttp.ClientResponse] = None
         async with self.async_session.post(
             url,
             params=query,
@@ -378,16 +377,16 @@ class ZMSImagePipeLine(PipeLine):
             image_from_resp: Optional[bytes] = None
             boundary: Optional[bytes] = None
             nph_headers: Union[Dict, bytes, None] = None
-            logger.debug(f"{lp} response status: {resp_status} -- headers: {resp.headers}")
+            # logger.debug(f"{lp} response status code: {resp_status_code} -- headers: {raw_resp.headers}")
             try:
-                resp.raise_for_status()
+                raw_resp.raise_for_status()
                 # These are the actual headers from Apache, boundary data will be in them if streaming
-                # ZMS embeds its own headers if streaming, ZMS will send a stream of images that begin with headers
-                content_type = resp.headers.get("content-type")
-                content_length = resp.headers.get("content-length")
+                # ZMS embeds its own headers (type, length) if streaming, ZMS will send a stream of images that begin with headers
+                content_type = raw_resp.headers.get("content-type")
+                content_length = raw_resp.headers.get("content-length")
                 if content_length is not None:
                     content_length = int(content_length)
-                transfer_encoding = resp.headers.get("Transfer-Encoding")
+                transfer_encoding = raw_resp.headers.get("Transfer-Encoding")
                 if "multipart/x-mixed-replace" in content_type:
                     # ZMS mode=jpeg , get the boundary
                     if "boundary=" in content_type:
@@ -397,12 +396,12 @@ class ZMSImagePipeLine(PipeLine):
                         img_type = ""
                         img_length = 0
                         chunk_size = 1024
-                        iterated_resp = b""
+                        image_from_resp = b""
                         _begin = False
                         i = 0
                         logger.debug(f"{lp} iterating chunks (size: {chunk_size}) as ZMS mode=jpeg sends a stream of "
                                      f"images that begin with headers (nph)")
-                        async for chunk in resp.content.iter_chunked(chunk_size):
+                        async for chunk in raw_resp.content.iter_chunked(chunk_size):
                             i += 1
                             if boundary and boundary in chunk:
                                 if _begin is False:
@@ -412,7 +411,7 @@ class ZMSImagePipeLine(PipeLine):
                                     # b'--ZoneMinderFrame\r\nContent-Type: image/jpeg\r\n
                                     # Content-Length: 134116\r\n\r\n
                                     # \xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xdb\x00C\x00
-                                    nph_headers, iterated_resp = _raw_resp.split(b"\r\n\r\n")
+                                    nph_headers, image_from_resp = _raw_resp.split(b"\r\n\r\n")
                                     nph_headers = {
                                         x.decode()
                                         .split(": ")[0]: x.decode()
@@ -423,7 +422,7 @@ class ZMSImagePipeLine(PipeLine):
                                     logger.debug(f"{lp} nph_headers = {nph_headers}")
                                     img_type = nph_headers.get("Content-Type")
                                     img_length = int(nph_headers.get("Content-Length"))
-                                    if not iterated_resp:
+                                    if not image_from_resp:
                                         logger.warning(f"{lp} no data found after headers in first chunk!")
                                     continue
                                 else:
@@ -431,35 +430,35 @@ class ZMSImagePipeLine(PipeLine):
                                         f"{lp} boundary found in chunk (size: {chunk_size}) #{i}, "
                                         f"breaking out of stream (mode=jpeg) reading loop..."
                                     )
-                                    iterated_resp += chunk.split(b"\r\n" + boundary)[0]
+                                    image_from_resp += chunk.split(b"\r\n" + boundary)[0]
                                     _begin = False
                                     break
 
-                            iterated_resp += chunk
+                            image_from_resp += chunk
                     else:
                         logger.warning(f"{lp} no boundary found in content-type header! -> {content_type}")
                 else:
-                    iterated_resp = await resp.read()
+                    image_from_resp = await raw_resp.read()
 
             except aiohttp.ClientResponseError as err:
                 # ZM throw 403 when token is expired, use existing refresh logic.
                 # todo: async login
-                if resp_status in {401, 403}:
+                if resp_status_code in {401, 403}:
                     if g.api.access_token:
-                        logger.error(f"{lp} {resp_status} {'Unauthorized' if resp_status == 401 else 'Forbidden'}, "
+                        logger.error(f"{lp} {resp_status_code} {'Unauthorized' if resp_status_code == 401 else 'Forbidden'}, "
                                      f"attempting to re-authenticate")
-                        g.api.login() if resp_status == 401 else g.api._refresh_access_token()
-                        logger.debug(f"{lp} {'re-authentication' if resp_status == 401 else 'refreshing access token'} "
+                        g.api.login() if resp_status_code == 401 else g.api._refresh_access_token()
+                        logger.debug(f"{lp} {'re-authentication' if resp_status_code == 401 else 'refreshing access token'} "
                                      f"complete, retrying async request")
                         return await self._req_img(url=self.built_url, timeout=timeout)
                     else:
-                        logger.exception(f"{lp} {resp_status} {'Unauthorized' if resp_status == 401 else 'Forbidden'}, "
+                        logger.exception(f"{lp} {resp_status_code} {'Unauthorized' if resp_status_code == 401 else 'Forbidden'}, "
                                          f"no access token found?")
-                elif resp_status == 404:
+                elif resp_status_code == 404:
                     logger.warning(f"{lp} Got 404 (Not Found), are you sure the url is correct? -> {self.built_url}")
                 else:
                     logger.warning(
-                        f"{lp} NOT 200|401|403|404 - Code={resp_status} error: {err}"
+                        f"{lp} NOT 200|401|403|404 - Code={resp_status_code} error: {err}"
                     )
 
             except asyncio.TimeoutError as err:
@@ -471,13 +470,13 @@ class ZMSImagePipeLine(PipeLine):
             else:
                 if content_length is not None:
                     if content_length > 0:
-                        if isinstance(iterated_resp, str):
-                            if iterated_resp.casefold().startswith("no frame found"):
+                        if isinstance(image_from_resp, str):
+                            if "no frame found" in image_from_resp.casefold():
                                 #  resp.text = 'No Frame found for event(69129) and frame id(280)']
                                 logger.warning(
-                                    f"{lp} Frame was not found by ZMS! >>> {resp.text}"
+                                    f"{lp} Frame was not found by ZMS! >>> {raw_resp.text}"
                                 )
-                return iterated_resp
+                return image_from_resp
 
     async def get_image(self) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
         if self.frames_attempted >= self.max_frames:
@@ -526,20 +525,17 @@ class ZMSImagePipeLine(PipeLine):
             for image_grab_attempt in range(self.max_attempts):
                 image_grab_attempt += 1
                 logger.debug(
-                    f"{lp} attempt #{image_grab_attempt}/{self.max_attempts} to grab past image from mid: "
-                    f"{g.mid} event data"
+                    f"{lp} attempt #{image_grab_attempt}/{self.max_attempts} to grab image id: "
+                    f"{self.current_frame} from monitor: {g.mid} ({g.mon_name})"
                 )
                 zms_response = await self._req_img(
                     url=self.built_url, timeout=timeout
                 )
-                # logger.debug(f"{lp} URL: {url}")
                 end_perf = time.time()
                 logger.debug(f"perf:{lp} ZMS request {self.built_url} took: {end_perf - past_perf:.5f}")
                 resp_msg = ""
                 # Cover unset and None
                 if not zms_response:
-                    # if isinstance(api_response, aiohttp.ClientResponse):
-                    #     resp_msg = f"<<response code={api_response.status}>> - response={api_response}"
                     resp_msg = f"no response received!"
 
                 elif isinstance(zms_response, bytes):
