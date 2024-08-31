@@ -372,9 +372,10 @@ class ZMSImagePipeLine(PipeLine):
             url,
             params=query,
             timeout=aiohttp.ClientTimeout(total=timeout),
-        ) as resp:
-            resp_status = resp.status
-            iterated_resp: Optional[bytes] = None
+            ssl=verify_ssl,
+        ) as raw_resp:
+            resp_status_code = raw_resp.status
+            image_from_resp: Optional[bytes] = None
             boundary: Optional[bytes] = None
             nph_headers: Union[Dict, bytes, None] = None
             logger.debug(f"{lp} response status: {resp_status} -- headers: {resp.headers}")
