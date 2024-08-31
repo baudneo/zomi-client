@@ -357,7 +357,7 @@ class ZMSImagePipeLine(PipeLine):
         timeout: int = 15,
     ):
         if not isinstance(g.api.async_session, aiohttp.ClientSession):
-            self.async_session = g.api.async_session = aiohttp.ClientSession()
+            self.async_session = g.api.async_session = aiohttp.ClientSession(loop=asyncio.get_event_loop())
         assert isinstance(self.async_session, aiohttp.ClientSession), f"Invalid session type: {type(self.async_session)}"
 
         lp: str = self.lp
@@ -380,8 +380,8 @@ class ZMSImagePipeLine(PipeLine):
             logger.debug(f"{lp} response status: {resp_status} -- headers: {resp.headers}")
             try:
                 resp.raise_for_status()
-                # ZMS embeds its own headers, these are the actual headers from Apache
-                # If mode = jpeg, ZMS will send a stream of images that begin with headers
+                # These are the actual headers from Apache, boundary data will be in them if streaming
+                # ZMS embeds its own headers if streaming, ZMS will send a stream of images that begin with headers
                 content_type = resp.headers.get("content-type")
                 content_length = resp.headers.get("content-length")
                 if content_length is not None:
@@ -447,8 +447,9 @@ class ZMSImagePipeLine(PipeLine):
                     if g.api.access_token:
                         logger.error(f"{lp} {resp_status} {'Unauthorized' if resp_status == 401 else 'Forbidden'}, "
                                      f"attempting to re-authenticate")
-                        g.api._login()
-                        logger.debug(f"{lp} re-authentication complete, retrying async request")
+                        g.api.login() if resp_status == 401 else g.api._refresh_access_token()
+                        logger.debug(f"{lp} {'re-authentication' if resp_status == 401 else 'refreshing access token'} "
+                                     f"complete, retrying async request")
                         return await self._req_img(url=self.built_url, timeout=timeout)
                     else:
                         logger.exception(f"{lp} {resp_status} {'Unauthorized' if resp_status == 401 else 'Forbidden'}, "

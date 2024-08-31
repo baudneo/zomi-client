@@ -209,9 +209,9 @@ class ZMAPI:
 
         if self.token_file:
             _ = self.cached_tokens
-            self._refresh_tokens_if_needed()
+            self._check_access_token()
         else:
-            self._login()
+            self.login()
 
     def show_portal(self):
         pass
@@ -234,9 +234,8 @@ class ZMAPI:
 
         return self.zm_tz
 
-    # called in _make_request to avoid 401s if possible
-    def _refresh_tokens_if_needed(self, grace_period: Optional[float] = None):
-        lp = f"api::_refresh_tokens_if_needed::"
+    def _check_access_token(self, grace_period: Optional[float] = None):
+        lp = f"api:_refresh_tokens_if_needed::"
         _login = False
         _relogin = False
         if not self.access_token:
@@ -304,13 +303,13 @@ class ZMAPI:
                     return
         if _login:
             logger.debug(f"{lp} calling login()")
-            self._login()
+            self.login()
         elif _relogin:
-            logger.debug(f"{lp} calling re-login()")
-            self._re_login()
+            logger.debug(f"{lp} calling _refresh_access_token()")
+            self._refresh_access_token()
 
-    def _re_login(self, grace_period: Optional[float] = None, reauth: bool = True):
-        lp = f"api::_re_login::"
+    def _refresh_access_token(self, grace_period: Optional[float] = None, reauth: bool = True):
+        lp = f"api:refresh::"
         _type = "refresh"
         tkn = self.refresh_token
         _login = False
@@ -367,7 +366,7 @@ class ZMAPI:
                         raise err
                     else:
                         resp_json = response.json()
-                        logger.debug(f"{lp} got API refresh response: {resp_json}")
+                        # logger.debug(f"{lp} got API refresh response: {resp_json}")
                         """
                         {
                             'access_token': '<TOKEN>', # JWT
@@ -395,19 +394,19 @@ class ZMAPI:
                         else:
                             if reauth:
                                 logger.error(
-                                    f"{lp} no response from API refresh, trying again"
+                                    f"{lp} no response from API token refresh, trying again"
                                 )
-                                self._re_login(reauth=False)
+                                self._refresh_access_token(reauth=False)
                             else:
                                 logger.error(
-                                    f"{lp} no response from API refresh, trying again"
+                                    f"{lp} no response from API token refresh"
                                 )
 
             if _login:
                 logger.debug(f"{lp} calling login()")
-                self._login()
+                self.login()
 
-    def _login(
+    def login(
         self, username: Optional[SecretStr] = None, password: Optional[SecretStr] = None
     ):
         lp: str = "api::login::"
@@ -772,7 +771,7 @@ class ZMAPI:
                         logger.error(
                             f"{lp} 401 Unauthorized, attempting to re-authenticate"
                         )
-                        self._login()
+                        self.login()
                         logger.debug(
                             f"{lp} re-authentication complete, retrying async request"
                         )
@@ -1026,7 +1025,7 @@ class ZMAPI:
             if err_msg == "RE_LOGIN":
                 if re_auth:
                     logger.debug(f"{lp} retrying login once")
-                    self._refresh_tokens_if_needed()
+                    self._check_access_token()
                     logger.debug(f"{lp} retrying failed request again...")
                     return self.make_request(
                         url, query, payload, type_action, re_auth=False
