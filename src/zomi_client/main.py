@@ -182,9 +182,9 @@ async def init_logs(config: ConfigFileModel) -> None:
             # this will flush the buffer to the file handler
             for h in logger.handlers:
                 if isinstance(h, BufferedLogHandler):
-                    logger.debug(
-                        f"Flushing buffered log handler to file --- {file_handler=}"
-                    )
+                    # logger.debug(
+                    #     f"Flushing buffered log handler to file --- {file_handler=}"
+                    # )
                     h.flush(file_handler=file_handler)
                     # Close the buffered handler
                     h.close()
