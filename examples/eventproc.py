@@ -155,7 +155,7 @@ if __name__ == "__main__":
     filename = Path(__file__).stem
     args = _parse_cli()
     logger.debug(f"Starting {filename}...")
-    logger.debug(f"DBG>>> env: {os.environ.items()}")
+    # logger.debug(f"DBG>>> env: {os.environ.items()}")
     ENV_VARS = ClientEnvVars()
     loop = uvloop.new_event_loop()
     asyncio.set_event_loop(loop)
