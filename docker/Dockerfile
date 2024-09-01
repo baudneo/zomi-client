@@ -52,5 +52,5 @@ RUN set -x \
 ENV ML_CLIENT_CONF_FILE=/opt/zomi-config/client.yml
 
 # Copy rootfs
-COPY --from=rootfs-converter /rootfs/etc/s6-overlay/scripts /
-COPY --from=rootfs-converter /rootfs/etc/s6-overlay/cont.init.d
+COPY --from=rootfs-converter /rootfs/etc/s6-overlay/scripts /etc/s6-overlay/scripts
+COPY --from=rootfs-converter /rootfs/etc/s6-overlay/cont.init.d /etc/s6-overlay/cont.init.d
