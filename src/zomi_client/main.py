@@ -238,7 +238,7 @@ def parse_client_config_file(
             logger.info(f"Overriding config:substitutions WITH testing:substitutions")
             substitutions = testing.substitutions
 
-    logger.debug(f"Replacing ${{VARS}} in config:substitutions")
+    logger.debug("Replacing ${VARS} in config:substitutions")
     for x in range(3):
         substitutions = _replace_vars(str(substitutions), substitutions)
 
@@ -268,10 +268,10 @@ def parse_client_config_file(
                 )
         else:
             logger.warning(f"IncludeFile {inc_file} is not a file!")
-    logger.debug(f"Replacing ${{VARS}} in config")
+    logger.debug("Replacing ${VARS} in config")
     cfg = _replace_vars(raw_config, substitutions)
     logger.debug(
-        f"perf:: Config file loaded and validated in {time.time() - _start:.5f} seconds"
+        f"perf: Config file loaded and validated in {time.time() - _start:.5f} seconds"
     )
 
     return template(**cfg)
@@ -504,7 +504,8 @@ class ZMClient:
     _comb: Dict
 
     @staticmethod
-    def is_live_event(is_live: bool):
+    def set_live_event(is_live: bool):
+        """Set the live status of the event globaly."""
         if is_live is True:
             if g:
                 g.past_event = False
@@ -523,7 +524,7 @@ class ZMClient:
     def signal_handler_clean_up(self, *args, **kwargs):
         self.db.clean_up()
         self.api.session.close()
-        asyncio.get_event_loop().create_task(self.api.async_session.close())
+        asyncio.wait(asyncio.get_event_loop().create_task(self.api.async_session.close()))
         asyncio.get_event_loop().stop()
 
     async def clean_up(self):
@@ -539,7 +540,7 @@ class ZMClient:
         global logger
 
         if not ZM_INSTALLED:
-            _msg = "ZoneMinder is not installed, the client requires to be installed on a ZoneMinder host!"
+            _msg = "ZoneMinder is not installed, it is a requirement to be installed on a ZoneMinder host!"
             logger.error(_msg)
             raise RuntimeError(_msg)
         lp = f"{LP}init:"
@@ -590,6 +591,7 @@ class ZMClient:
             # _hash = executor.submit(lambda: _hash_input.compute())
             futures.append(executor.submit(self._init_db))
             futures.append(executor.submit(self._init_api))
+            futures.append(executor.submit(self._init_notifications))
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         # self.config_hash = _hash.result()
@@ -613,12 +615,12 @@ class ZMClient:
             g.mon_colorspace,
             g.mon_image_buffer_count,
         ) = self.db.grab_all(eid)
-        if (mid and g.mid) and (g.mid != mid):
-            logger.debug(
-                f"{LP} CLI supplied monitor ID ({g.mid}) INCORRECT! Changed to: {mid}"
-            )
         if mid:
-            if not g.mid or g.mid != mid:
+            if g.mid and (g.mid != mid):
+                logger.warning(
+                    f"{LP} CLI supplied monitor ID ({mid}) INCORRECT! Changed to: {g.mid}"
+                )
+            elif not g.mid:
                 logger.debug(f"{LP} Setting GLOBAL (Current: {g.mid}) monitor ID to: {mid}")
                 g.mid = mid
 
@@ -631,7 +633,10 @@ class ZMClient:
     def _init_api(self):
         g.api = self.api = ZMAPI(g.config.zoneminder)
         logger.debug("API initialized")
+
+    def _init_notifications(self):
         self.notifications = Notifications()
+        logger.debug("Notifications initialized")
 
     @staticmethod
     async def convert_to_cv2(image: Union[np.ndarray, bytes]):
@@ -724,7 +729,7 @@ class ZMClient:
         return self._comb_filters
 
     async def detect(self, eid: Optional[int] = None, mid: Optional[int] = None):
-        """Detect objects in an event
+        """Detect objects in a ZoneMinder event, past and live events are supported.
 
         Args:
             eid (Optional[int]): Event ID. Required for API event image pulling method.
@@ -750,9 +755,7 @@ class ZMClient:
             logger.info(
                 f"{lp} Running detection for event {eid}, obtaining monitor info using ZoneMinder DB..."
             )
-
             await self._get_db_data(eid)
-
             # Check that the cause from db has "Motion", "ONVIF" or "Trigger" in it
             if g.config.detection_settings.motion_only is True:
                 cause = self.db.cause_from_eid(eid)
@@ -792,12 +795,15 @@ class ZMClient:
 
         # init Image Pipeline
         logger.debug(f"{lp} Initializing Image Pipeline...")
-        if img_pull_method and img_pull_method.zms.enabled is True:
-            logger.debug(f"{lp} Using ZMS CGI for image source")
-            self.image_pipeline = ZMSImagePipeLine(img_pull_method.zms)
-        elif img_pull_method.api and img_pull_method.api.enabled is True:
-            logger.debug(f"{lp} Using ZM API for image source")
-            self.image_pipeline = APIImagePipeLine(img_pull_method.api)
+        if img_pull_method:
+            pull_str = "CGI ZMS"
+            if img_pull_method.zms and img_pull_method.zms.enabled is True:
+                self.image_pipeline = ZMSImagePipeLine(img_pull_method.zms)
+            elif img_pull_method.api and img_pull_method.api.enabled is True:
+                self.image_pipeline = APIImagePipeLine(img_pull_method.api)
+                pull_str = "ZM API"
+            logger.debug(f"{lp} Using {pull_str} for image source")
+            del pull_str
 
         models: Optional[Dict] = None
         self.static_objects.pickle()
@@ -1249,8 +1255,8 @@ class ZMClient:
                     continue
                 if not zone_data.points:
                     logger.warning(
-                        f"{__lp} Zone '{zone_name}' has no points! Did you rename a Zone in ZM"
-                        f" or forget to add points? SKIPPING..."
+                        f"{__lp} Zone '{zone_name}' has no points! Did you rename an imported Zone in ZM"
+                        f" or forget to add points to a non-imported zone? SKIPPING..."
                     )
                     continue
 
@@ -1546,8 +1552,22 @@ class ZMClient:
                                     logger.debug(f"{lp} no min_area set")
 
                                 # color filtering
-                                logger.debug(f"DBG>>> this is where color filtering should go: {color = } // "
-                                             f"{g.config.detection_settings.color = }")
+
+                                color_config = g.config.detection_settings.color
+                                if color is None:
+                                    if color_config:
+                                        if color_config.enabled:
+                                            logger.warning(f"{lp} color detection is enabled but the "
+                                                           f"server did not return any colors!")
+                                else:
+                                    if color_config:
+                                        if color_config.enabled:
+                                            logger.debug(f"DBG>>> this is where color filtering should go: {color = }"
+                                                         f" // {color_config = }")
+                                        else:
+                                            logger.warning(f"{lp} server sent color data but color detection is "
+                                                           f"disabled in client config file! "
+                                                           f"(detection_settings:color)")
 
                                 s_o: Optional[bool] = None
                                 s_o_reason: Optional[str] = "<DFLT>"
