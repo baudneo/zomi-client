@@ -145,7 +145,7 @@ async def main():
     __event_modes = ["event", ""]
     if _mode in __event_modes:
         # set live or past event
-        zm_client.is_live_event(args.live)
+        zm_client.set_live_event(args.live)
         return await zm_client.detect(eid=eid, mid=g.mid)
     else:
         raise ValueError(f"Unknown mode: {_mode}")
