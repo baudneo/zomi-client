@@ -11,20 +11,9 @@ from typing import Optional, Union, Tuple, TYPE_CHECKING, Any, Dict, List, Named
 
 from pydantic import SecretStr
 
-try:
-    from sqlalchemy import MetaData, create_engine, select
-    from sqlalchemy.engine import Engine, Connection, CursorResult, ResultProxy
-    from sqlalchemy.exc import SQLAlchemyError
-except ImportError:
-    warnings.warn("SQLAlchemy not installed, ZMDB will not be available", ImportWarning)
-    MetaData: Optional[MetaData] = None
-    create_engine: Optional[create_engine] = None
-    select: Optional[select] = None
-    Engine: Optional[Engine] = None
-    Connection: Optional[Connection] = None
-    CursorResult: Optional[CursorResult] = None
-    SQLAlchemyError: Optional[SQLAlchemyError] = None
-    ResultProxy: Optional[ResultProxy] = None
+from sqlalchemy import MetaData, create_engine, select
+from sqlalchemy.engine import Engine, Connection, CursorResult, ResultProxy
+from sqlalchemy.exc import SQLAlchemyError
 
 from ...Log import CLIENT_LOGGER_NAME
 
@@ -67,7 +56,7 @@ class ZMDB:
         # logger.debug(f"{LP} ClientEnvVars = {self.env}")
 
         self.engine = None
-        self.connection = None
+        self.connection: Connection = None
         self.meta = None
         g.db = self
         self.config = self.init_config()
@@ -114,6 +103,8 @@ class ZMDB:
             self.meta.tables["Events"].c.Id == eid
         ).values(Notes=notes)
         self.connection.execute(_update)
+        self.connection.commit()
+
 
     def event_frames_len(self) -> Optional[int]:
         _select: select = select(self.meta.tables["Events"].c.Frames).where(
