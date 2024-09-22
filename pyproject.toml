@@ -9,7 +9,7 @@ version = "0.0.1a5"
 dependencies = [
     # We install into its own Venv,
     # if the user has opencv with CUDA they can override themselves
-    "opencv-contrib-python-headless>=4.8.1.78",
+    "opencv-contrib-python-headless>=4.10.0.84",
     "numpy>=1.21.4",
     "python-jose>=3.3.0",
     "requests>=2.31.0",
