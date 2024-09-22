@@ -1005,19 +1005,56 @@ def do_install():
                 raise ValueError(f"Invalid destination file: {_dest_ep} - Please delete the existing file yourself!")
         _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
 
+    if not create_venv(create_pip_cmd()):
+        raise RuntimeError("Failed to create VENV!")
+
+
+def create_pip_cmd() -> List:
     _src: str = (
         f"{REPO_BASE.expanduser().resolve().as_posix()}"
     )
-
-    create_("secrets", cfg_dir / "secrets.yml")
-    create_(_inst_type, cfg_dir / f"{_inst_type}.yml")
+    _cmd_array: List[str] = [
+        "-m",
+        "pip",
+        "install",
+    ]
+    if args.no_cache:
+        logger.info("Disabling pip cache...")
+        _cmd_array.append("--no-cache-dir")
 
     if testing and not editable:
         _cmd_array.append("--dry-run")
+    elif testing and editable:
+        logger.warning(
+            "TESTING: skipping --editable flag, this will not work in test mode"
+        )
+    elif editable and not testing:
+        logger.info(
+            "Installing in pip --editable mode, DO NOT remove the source git"
+            " directory after install! git pull will update the installed package"
+        )
+        _cmd_array.append("--editable")
+
     _cmd_array.append(_src)
+    return _cmd_array
+
+
+def create_venv(cmd_array: List[str]):
+    global venv_dir
+    if not venv_dir:
+        logger.error("VENV directory not set!")
+        return False
+    venv_dir = venv_dir.expanduser().resolve() if not venv_dir.is_absolute() else venv_dir
+
+    if not venv_dir.exists():
+        logger.error(f"VENV directory {venv_dir} does not exist!")
+        return
+    elif not venv_dir.is_dir():
+        logger.error(f"VENV directory {venv_dir} is not a directory!")
+        return
 
     _venv = ZoMiEnvBuilder(
-        with_pip=True, cmd=_cmd_array, upgrade_deps=True, prompt="ZoMi_Client"
+        with_pip=True, cmd=cmd_array, upgrade_deps=True, prompt=VENV_NAME
     )
     test_msg(f"Creating VENV in {venv_dir}")
     try:
@@ -1026,7 +1063,8 @@ def do_install():
         if not testing:
             logger.warning(f"Issue while creating VENV: {e}")
     except Exception as e:
-        logger.error(f"Failed to create VENV: {e}")
+        logger.exception(f"Failed to create VENV!")
+        return False
 
     _f: Path = data_dir / "bin/eventproc.py"
     test_msg(
@@ -1036,9 +1074,13 @@ def do_install():
         if not _f.is_absolute():
             _f = _f.expanduser().resolve()
         content: Optional[str] = _f.read_text() or None
-        with _f.open("w+") as f:
-            f.write(f"#!{_venv.context.env_exec_cmd}\n{content}")
-        del content
+        try:
+            with _f.open("w+") as f:
+                f.write(f"#!{_venv.context.env_exec_cmd}\n{content}")
+        except Exception as e:
+            logger.exception(f"Failed to modify {_f}, MAKE SURE TO MODIFY IT YOURSELF WITH the above shebang!")
+            return False
+    return True
 
 
 class Envsubst:
