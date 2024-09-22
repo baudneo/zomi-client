@@ -9,11 +9,7 @@ import cv2
 import numpy as np
 from pydantic import SecretStr
 import requests
-try:
-    from shapely.geometry import Polygon
-except ImportError as e:
-    warnings.warn(f"ImportError: {e}", ImportWarning)
-    Polygon = None
+from shapely.geometry import Polygon
 
 from ..Log import CLIENT_LOGGER_NAME
 from .validators import str2path
