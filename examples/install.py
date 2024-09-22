@@ -955,23 +955,6 @@ def do_install():
 
     _inst_type: str = "client"
     check_backup("client")
-
-    _cmd_array: List[str] = [
-        "-m",
-        "pip",
-        "install",
-    ]
-
-    if args.no_cache:
-        logger.info("Disabling pip cache...")
-        _cmd_array.append("--no-cache-dir")
-    if editable:
-        logger.info(
-            "Installing in pip --editable mode, DO NOT remove the source git"
-            " directory after install! git pull will update the installed package"
-        )
-        _cmd_array.append("--editable")
-
     install_host_dependencies(_inst_type)
 
     copy_file(
@@ -1365,6 +1348,12 @@ if __name__ == "__main__":
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
     install_as_user, install_as_group = args.system_user or "", args.system_group or ""
+    if args.venv_only:
+        logger.info("Only creating VENV...")
+        if not create_venv(create_pip_cmd()):
+            raise RuntimeError("Failed to create VENV!")
+
+        sys.exit(0)
     do_web_user()
     if not install_as_user:
         logger.error(
