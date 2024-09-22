@@ -3,7 +3,7 @@ If you use software from the [ZoneMinder organization](https://github.com/ZoneMi
 please consider [sponsoring ZoneMinder](https://github.com/sponsors/ZoneMinder). ZoneMinder has been free with
 a paid support option and paid bounties but, ZoneMinder Org needs help with bringing cash flow in. If you have the means, please consider sponsoring ZoneMinder, Thanks!
 
-To clarify; I do not receive any of the funds, it goes strictly to the main developer of ZM. (I am a sponser as well!)
+To clarify; I do not receive any of the funds, it goes strictly to the main developer of ZM.
 
 # ZoneMinder Machine Learning Client (ZoMi ML Client)
 ### NOTE
