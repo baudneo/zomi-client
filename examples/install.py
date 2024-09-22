@@ -973,6 +973,9 @@ def do_install():
         cfg_create_mode,
     )
 
+    create_("secrets", cfg_dir / "secrets.yml")
+    create_(_inst_type, cfg_dir / f"{_inst_type}.yml")
+
     # create a symbolic link to both files in /usr/local/bin
     # so that they can be called from anywhere
     test_msg(
