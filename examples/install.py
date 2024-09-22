@@ -167,6 +167,8 @@ def parse_cli():
     global args
 
     parser = argparse.ArgumentParser(description=__doc__)
+
+    parser.add_argument("--venv-only", action="store_true", help="Only create the VENV", dest="venv_only")
     parser.add_argument("--mlapi-user", help="API user", type=str, default=None, dest="api_user")
     parser.add_argument("--mlapi-pass", help="API password", type=str, default=None, dest="api_pass")
     parser.add_argument(
