@@ -1049,17 +1049,17 @@ def create_venv(cmd_array: List[str]):
         return False
     venv_dir = venv_dir.expanduser().resolve() if not venv_dir.is_absolute() else venv_dir
 
-    if not venv_dir.exists():
-        logger.error(f"VENV directory {venv_dir} does not exist!")
-        return
+    if venv_dir.exists():
+        logger.error(f"VENV directory {venv_dir} already exists! Please remove it and try again!")
+        return False
     elif not venv_dir.is_dir():
         logger.error(f"VENV directory {venv_dir} is not a directory!")
-        return
+        return False
 
     _venv = ZoMiEnvBuilder(
         with_pip=True, cmd=cmd_array, upgrade_deps=True, prompt=VENV_NAME
     )
-    test_msg(f"Creating VENV in {venv_dir}")
+    test_msg(f"Creating \"{VENV_NAME}\" virtual environment in directory: {venv_dir}")
     try:
         _venv.create(venv_dir)
     except FileNotFoundError as e:
