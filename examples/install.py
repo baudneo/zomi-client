@@ -16,6 +16,8 @@ import re
 import os
 import sys
 
+VENV_NAME: str = "ZoMi_Client"
+
 # Change these if you want to install to a different default location
 # You can also specify these locations via CLI
 DEFAULT_DATA_DIR = "/opt/zomi/client"
