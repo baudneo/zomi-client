@@ -119,7 +119,12 @@ class ZMDB:
         # Delete, then insert, tags should be a list of Tag objects.  Since Tags have AssignedBy and AssignedTime etc, one
         # should be careful not to lose that data.
     def set_event_tags(self, eid: int, tags: list):
-        self.meta.tables['Events_Tags'].delete().where(self.meta.tables["Eventss_Tags"].c.Id == eid)
+        self.meta.tables['Events_Tags'].delete().where(self.meta.tables["Events_Tags"].c.Id == eid)
+        _insert = self.meta.tables["Event"].insert()
+        self.connection.execute(_insert, tags)
+
+        # insert new tags, tags should be a list of Tag objects. These should be new not-existing tags
+    def add_event_tags(self, eid: int, tags: list):
         _insert = self.meta.tables["Event"].insert()
         self.connection.execute(_insert, tags)
 
