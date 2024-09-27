@@ -26,6 +26,26 @@ LP = "zmdb:"
 g: Optional[GlobalConfig] = None
 
 
+# pydantic allows ORM classes:
+Base = declarative_base()
+
+class EventsTags(Base):
+    __tablename__ = 'Events_Tags'
+    TagId = Column(Integer, ForeignKey('Tags.Id'), primary_key=True)
+    EventId = Column(Integer, ForeignKey('Events.Id'), primary_key=True)
+    AssignedDate = Column(TIMESTAMP)
+    AssignedBy = Column(String)
+
+
+class ZMTag(Base):
+    __tablename__ = 'Tags'
+    Id = Column(Integer, primary_key=True)
+    Name = Column(VARCHAR(64))
+    CreateDate = Column(TIMESTAMP)
+    CreatedBy = Column(Integer)
+    LastAssignedDate = Column(TIMESTAMP)
+
+
 class ZMVersion(NamedTuple):
     major: int
     minor: int
