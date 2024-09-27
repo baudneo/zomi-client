@@ -126,6 +126,38 @@ class ZMDB:
         self.connection.execute(_update)
         self.connection.commit()
 
+    def get_tags(self):
+        lp = f"{LP}get_tags:"
+        _select: select = select(ZMTag)
+        result: CursorResult = self.run_select(_select)
+        for row in result:
+            logger.debug(f"{lp} {row = }")
+
+        return result
+
+    def get_event_tags(self, eid: int):
+        lp = f"{LP}get_event_tags:"
+        _select: select = select(EventsTags).where(EventsTags.EventId == eid)
+        result: CursorResult = self.run_select(_select)
+        for row in result:
+            logger.debug(f"{lp} {row = }")
+        return result
+
+    def set_event_tags(self, eid: int, tags: List[ZMTag]):
+        """
+        Delete, then insert, tags should be a list of Tag objects.  Since Tags have AssignedBy and AssignedTime etc,
+        one should be careful not to lose that data.
+        """
+        # delete the existing tags? What if other tags are already set by the user (i.e. past event)?
+
+        self.connection.execute(
+            delete(EventsTags).where(EventsTags.EventId == eid)
+        )
+        for tag in tags:
+            _insert = insert(EventsTags).values(EventId=eid, TagId=tag.Id, AssignedBy=None, AssignedDate=datetime.timestamp())
+            self.connection.execute(_insert)
+        self.connection.commit()
+
 
     def event_frames_len(self) -> Optional[int]:
         _select: select = select(self.meta.tables["Events"].c.Frames).where(
