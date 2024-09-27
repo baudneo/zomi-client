@@ -380,7 +380,7 @@ class ZMDB:
         self.meta = MetaData()
         self.meta.reflect(
             bind=self.engine,
-            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones"],
+            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones", "Tags", "Events_Tags"],
         )
 
     def run_select(self, select_stmt: select) -> ResultProxy:
