@@ -914,6 +914,37 @@ class ZMClient:
         image_start = time.time()
         async for image, image_name in self.image_pipeline.generate_image():
             image_loop += 1
+            if g.config.detection_settings.images.debug.enabled:
+                logger.debug(f"{lp} Debug image configured, saving image to disk")
+                # image is in bytes
+                debug_image = np.frombuffer(image, dtype=np.uint8)
+                debug_image = cv2.imdecode(debug_image, cv2.IMREAD_COLOR)  # Assuming a color image
+                if g.config.detection_settings.images.debug.path:
+                    _dest = g.config.detection_settings.images.debug.path
+                    logger.debug(f"{lp} Debug image PATH configured: {_dest.as_posix()}")
+                elif g.config.system.image_dir:
+                    _dest = g.config.system.image_dir
+                    logger.debug(
+                        f"{lp} Debug image path NOT configured, using system image_dir: {_dest.as_posix()}"
+                    )
+                else:
+                    _dest = g.config.system.variable_data_path / "images"
+                    logger.debug(
+                        f"{lp} Debug image path and system image_dir NOT configured"
+                        f" using {{system:variable_data_dir}} as base: {_dest.as_posix()}"
+                    )
+
+                img_write_success = cv2.imwrite(
+                    _dest.joinpath(f"debug-img_{g.eid}-{image_loop}.jpg").as_posix(),
+                    debug_image,
+                )
+                if img_write_success:
+                    logger.debug(f"{lp} Debug image written to disk.")
+                else:
+                    logger.warning(f"{lp} Debug image failed to write to disk.")
+                del debug_image
+
+
             if break_out is True:
                 logger.debug(
                     f"perf:{LP} IMAGE LOOP #{image_loop} ({image_name}) took {time.time() - image_start:.5f} s"
