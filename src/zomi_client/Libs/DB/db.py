@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ...Models.config import GlobalConfig, ZMDBSettings, ClientEnvVars
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
-LP = "zmdb::"
+LP = "zmdb:"
 g: Optional[GlobalConfig] = None
 
 
