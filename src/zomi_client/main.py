@@ -2389,13 +2389,16 @@ class ZMClient:
 
             # check if the event has tags
             event_tags = g.db.get_event_tags(g.eid)
-            event_tags_by_tagid = dict(map(lambda i: (i.TagId, i), event_tags))
+            logger.debug(f"{event_tags}")
+            event_tags_by_tagid = {x.TagId: x for x in event_tags}
+            logger.debug(f"{event_tags_by_tagid}")
 
             tags = g.db.get_tags()
             # Should build a Name indexed hash of tags for efficient lookups as well as an Id indexed hash
 
-            tags_by_id = dict(map(lambda i: (i.Id, i), tags))
-            tags_by_name = dict(map(lambda i: (i.Name, i), tags))
+            #tags_by_id = dict(map(lambda i: (i.Id, i), tags))
+            tags_by_name = {x.Name: x for x in tags}
+            logger.debug(f"{tags_by_name}")
 
             new_event_tags = []
             for _l in labels:
@@ -2407,12 +2410,15 @@ class ZMClient:
 
                 tag = tags_by_name[_l]
                         
-                if not tag['Id'] in event_tags_by_tagid :
+                if not tag.Id in event_tags_by_tagid :
                     # add the detected tag
                     new_event_tags.append({'TagId': tag['Id'], 'EventId':g.eid, 'AssignedBy':None, 'AssignedDate':datetime.now()})
 
             if new_event_tags:
                 g.db.add_event_tags(g.eid, new_event_tags)
+
+        #if store_bounding_boxes:
+            # store bounding boxes in Event_Data
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)
