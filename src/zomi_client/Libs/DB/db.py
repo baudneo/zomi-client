@@ -134,18 +134,18 @@ class ZMDB:
         lp = f"{LP}get_tags:"
         _select: select = select(ZMTag)
         result: CursorResult = self.run_select(_select)
-        for row in result:
-            logger.debug(f"{lp} {row = }")
+        #for row in result:
+         #   logger.debug(f"{lp} {row = }")
 
-        return result
+        return result.fetchall()
 
     def get_event_tags(self, eid: int):
         lp = f"{LP}get_event_tags:"
         _select: select = select(EventsTags).where(EventsTags.EventId == eid)
         result: CursorResult = self.run_select(_select)
-        for row in result:
-            logger.debug(f"{lp} {row = }")
-        return result
+        #for row in result:
+            #logger.debug(f"{lp} {row = }")
+        return result.fetchall()
 
     def set_event_tags(self, eid: int, tags: List[ZMEventTag]):
         """
