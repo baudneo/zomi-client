@@ -2382,22 +2382,25 @@ class ZMClient:
                 tags_support = True
         elif zm_ver.major > 1:
             tags_support = True
+        logger.debug(f"{lp} ZM version: {zm_ver} -> tags_support: {tags_support}")
+        if tags_support:
+            # check that the detected object label has a tag created
 
-        # if tags_support:
-        #     # check that the detected object label has a tag created
-        #
-        #     # check if the event has tags
-        #     tags = g.db.get_event_tags(g.eid)
-        #     if tags:
-        #         # check if the event has the detected labels tag
-        #         if "detected" not in tags:
-        #             # add the detected tag
-        #             tags.append("detected")
-        #             g.db.set_event_tags(g.eid, tags)
-        #     else:
-        #         # add the detected tag
-        #         tags = ["detected"]
-        #         g.db.set_event_tags(g.eid, tags)
+            # check if the event has tags
+            event_tags = g.db.get_event_tags(g.eid)
+            tags = g.db.get_tags()
+            if event_tags:
+                # check if the event has the detected labels tag
+                # if "detected" not in tags:
+                    # add the detected tag
+                    # tags.append("detected")
+                    # g.db.set_event_tags(g.eid, tags)
+                logger.debug(f"{lp} Event has tags: {event_tags}")
+            else:
+                # add the detected tag
+                # tags = ["detected"]
+                # g.db.set_event_tags(g.eid, tags)
+                logger.debug(f"{lp} Event has no tags, adding 'detected' tag")
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)
