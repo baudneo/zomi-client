@@ -76,9 +76,9 @@ class ZMDB:
 
         # logger.debug(f"{LP} ClientEnvVars = {self.env}")
 
-        self.engine = None
-        self.connection: Connection = None
-        self.meta = None
+        self.engine: Optional[Engine] = None
+        self.connection: Optional[Connection] = None
+        self.meta: Optional[MetaData] = None
         g.db = self
         self.config = self.init_config()
         self._db_create()
