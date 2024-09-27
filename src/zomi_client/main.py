@@ -1145,7 +1145,6 @@ class ZMClient:
             )
 
             if not g.past_event:
-                await self.post_process(matched)
                 self.static_objects.pickle(
                     labels=matched_l, confs=matched_c, bboxs=matched_b, write=True
                 )
@@ -1153,6 +1152,8 @@ class ZMClient:
                 logger.info(
                     f"{LP} This is a past event, not post processing or writing static_object data"
                 )
+            # always post process
+            await self.post_process(matched)
 
             if "frame_img" in matched:
                 matched.pop("frame_img")
