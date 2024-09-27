@@ -2272,41 +2272,7 @@ class ZMClient:
                 write_model=write_model,
                 write_processor=write_processor,
             )
-        if g.config.detection_settings.images.debug.enabled:
-            from .Models.utils import draw_filtered_bboxes
 
-            logger.debug(f"{lp} Debug image configured, drawing filtered out bboxes")
-
-            debug_image = draw_filtered_bboxes(
-                prepared_image, list(self.filtered_labels[image_name])
-            )
-            logger.debug(f"DBG:FIX ME>>> {list(self.filtered_labels[image_name])}")
-            from datetime import datetime
-
-            if g.config.detection_settings.images.debug.path:
-                _dest = g.config.detection_settings.images.debug.path
-                logger.debug(f"{lp} Debug image PATH configured: {_dest.as_posix()}")
-            elif g.config.system.image_dir:
-                _dest = g.config.system.image_dir
-                logger.debug(
-                    f"{lp} Debug image path NOT configured, using system image_dir: {_dest.as_posix()}"
-                )
-            else:
-                _dest = g.config.system.variable_data_path / "images"
-                logger.debug(
-                    f"{lp} Debug image path and system image_dir NOT configured"
-                    f" using {{system:variable_data_dir}} as base: {_dest.as_posix()}"
-                )
-
-            img_write_success = cv2.imwrite(
-                _dest.joinpath(f"debug-img_{datetime.now()}.jpg").as_posix(),
-                debug_image,
-            )
-            if img_write_success:
-                logger.debug(f"{lp} Debug image written to disk.")
-            else:
-                logger.warning(f"{lp} Debug image failed to write to disk.")
-            del debug_image
 
         jpg_file = g.event_path / "objdetect.jpg"
         object_file = g.event_path / "objects.json"
