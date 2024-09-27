@@ -2385,21 +2385,23 @@ class ZMClient:
         elif zm_ver.major > 1:
             tags_support = True
 
-        # if tags_support:
-        #     # check that the detected object label has a tag created
-        #
-        #     # check if the event has tags
-        #     tags = g.db.get_event_tags(g.eid)
-        #     if tags:
-        #         # check if the event has the detected labels tag
-        #         if "detected" not in tags:
-        #             # add the detected tag
-        #             tags.append("detected")
-        #             g.db.set_event_tags(g.eid, tags)
-        #     else:
-        #         # add the detected tag
-        #         tags = ["detected"]
-        #         g.db.set_event_tags(g.eid, tags)
+        if tags_support:
+            # check that the detected object label has a tag created
+
+            # Merge tags
+            tags = g.db.get_event_tags(g.eid)
+            for _l in labels:
+                found = false
+                for _t in tags:
+                    if _t.Name == _l:
+                        found = true
+                        
+                if not found:
+                    # add the detected tag
+                    tags.append({'Name':_l, 'EventId':g.eid})
+
+            if tags:
+                g.db.set_event_tags(g.eid, tags)
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)
