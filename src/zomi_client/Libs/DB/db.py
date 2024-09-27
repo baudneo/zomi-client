@@ -324,7 +324,7 @@ class ZMDB:
                         if cfg_file_db is not None:
                             # There is an entry in the config file, use it even if EN-V or .conf files set it
                             set_to = cfg_file_db
-                            xtra_ = f" (OVERRIDING to '{set_to}' from config file)"
+                            xtra_ = f" (OVERRIDING to '{set_to}' from zomi config file)"
 
                 if not set_to:
                     # not in env, ZM .conf files or config file try internal defaults
