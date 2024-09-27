@@ -1393,12 +1393,6 @@ if __name__ == "__main__":
     args.log_dir = log_dir = log_dir.expanduser().resolve()
     args.tmp_dir = tmp_dir = tmp_dir.expanduser().resolve()
     install_as_user, install_as_group = args.system_user or "", args.system_group or ""
-    if args.venv_only:
-        logger.info("Only creating VENV...")
-        if not create_venv(create_pip_cmd()):
-            raise RuntimeError("Failed to create VENV!")
-
-        sys.exit(0)
     do_web_user()
     if not install_as_user:
         logger.error(
@@ -1409,6 +1403,15 @@ if __name__ == "__main__":
     args.system_group = install_as_group
 
     show_config(args)
+
+    if args.venv_only:
+        logger.info("--venv-only supplied, only creating VENV...")
+        if not create_venv(create_pip_cmd()):
+            sys.exit("Failed to create VENV! Exiting...")
+        else:
+            logger.info("VENV created successfully! Exiting...")
+
+        sys.exit(0)
 
     _ENV = {
         "ML_INSTALL_DATA_DIR": data_dir.as_posix(),
