@@ -26,7 +26,7 @@ LP = "zmdb:"
 g: Optional[GlobalConfig] = None
 
 
-# pydantic allows ORM classes:
+# sqlalchemy allows ORM classes:
 Base = declarative_base()
 
 class EventsTags(Base):
