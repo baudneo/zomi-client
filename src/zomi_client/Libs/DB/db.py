@@ -105,6 +105,23 @@ class ZMDB:
         self.connection.execute(_update)
         self.connection.commit()
 
+    def get_tags(self):
+        _select: select = select(self.meta.tables["Tags"])
+        result: CursorResult = self.run_select(_select)
+        return result
+
+    def get_event_tags(self, eid: int):
+        _select: select = select(self.meta.tables["Events_Tags"]).where(
+                self.meta.tables['Events_Tags'].c.EventId == eid)
+        result: CursorResult = self.run_select(_select)
+        return result
+
+        # Delete, then insert, tags should be a list of Tag objects.  Since Tags have AssignedBy and AssignedTime etc, one
+        # should be careful not to lose that data.
+    def set_event_tags(self, eid: int, tags: list):
+        self.meta.tables['Events_Tags'].delete().where(self.meta.tables["Eventss_Tags"].c.Id == eid)
+        _insert = self.meta.tables["Event"].insert()
+        self.connection.execute(_insert, tags)
 
     def event_frames_len(self) -> Optional[int]:
         _select: select = select(self.meta.tables["Events"].c.Frames).where(
