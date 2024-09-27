@@ -4,7 +4,6 @@ import asyncio
 import datetime
 import logging
 import random
-import string
 import time
 from pathlib import Path
 from typing import Optional, Union, TYPE_CHECKING, Tuple, Any, Dict, List, Generator
@@ -107,6 +106,11 @@ class PipeLine:
     ) -> Tuple[Optional[Union[bytes, bool]], Optional[str]]:
         """Process the frame, increment counters, and return the image if there is one"""
         lp = f"{LP}process_frame:"
+        if g.past_event:
+            self.current_frame = self.current_frame + self.increment_by
+            logger.debug(
+                f"{lp} incrementing next frame ID to read by {self.increment_by} = {self.current_frame}"
+            )
         if image:
             if not img_name:
                 img_name = f"mid_{g.mid}-{self.attempted_fids[-1]}.jpg" if not g.past_event else self.current_frame
@@ -118,11 +122,6 @@ class PipeLine:
         if end:
             logger.error(f"{lp} end has been called, no more images to process!")
             return False, None
-        if g.past_event:
-            self.current_frame = self.current_frame + self.increment_by
-            logger.debug(
-                f"{lp} incrementing next frame ID to read by {self.increment_by} = {self.current_frame}"
-            )
         return None, None
 
     async def generate_image(

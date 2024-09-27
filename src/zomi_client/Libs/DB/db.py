@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import time
-import warnings
 from configparser import ConfigParser, SectionProxy
 from datetime import datetime
 from decimal import Decimal
@@ -11,9 +10,11 @@ from typing import Optional, Union, Tuple, TYPE_CHECKING, Any, Dict, List, Named
 
 from pydantic import SecretStr
 
-from sqlalchemy import MetaData, create_engine, select
+from sqlalchemy import MetaData, create_engine, select, Column, Integer, ForeignKey, String, DateTime, delete, insert
+from sqlalchemy.dialects.mysql import VARCHAR, TIMESTAMP
 from sqlalchemy.engine import Engine, Connection, CursorResult, ResultProxy
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import declarative_base
 
 from ...Log import CLIENT_LOGGER_NAME
 
@@ -21,8 +22,28 @@ if TYPE_CHECKING:
     from ...Models.config import GlobalConfig, ZMDBSettings, ClientEnvVars
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
-LP = "zmdb::"
+LP = "zmdb:"
 g: Optional[GlobalConfig] = None
+
+
+# sqlalchemy allows ORM classes:
+Base = declarative_base()
+
+class EventsTags(Base):
+    __tablename__ = 'Events_Tags'
+    TagId = Column(Integer, ForeignKey('Tags.Id'), primary_key=True)
+    EventId = Column(Integer, ForeignKey('Events.Id'), primary_key=True)
+    AssignedDate = Column(TIMESTAMP)
+    AssignedBy = Column(String)
+
+
+class ZMTag(Base):
+    __tablename__ = 'Tags'
+    Id = Column(Integer, primary_key=True)
+    Name = Column(VARCHAR(64))
+    CreateDate = Column(TIMESTAMP)
+    CreatedBy = Column(Integer)
+    LastAssignedDate = Column(TIMESTAMP)
 
 
 class ZMVersion(NamedTuple):
@@ -55,9 +76,9 @@ class ZMDB:
 
         # logger.debug(f"{LP} ClientEnvVars = {self.env}")
 
-        self.engine = None
-        self.connection: Connection = None
-        self.meta = None
+        self.engine: Optional[Engine] = None
+        self.connection: Optional[Connection] = None
+        self.meta: Optional[MetaData] = None
         g.db = self
         self.config = self.init_config()
         self._db_create()
@@ -106,27 +127,59 @@ class ZMDB:
         self.connection.commit()
 
     def get_tags(self):
-        _select: select = select(self.meta.tables["Tags"])
+        """
+        Returns Tag objects 
+        """
+
+        lp = f"{LP}get_tags:"
+        _select: select = select(ZMTag)
         result: CursorResult = self.run_select(_select)
+        for row in result:
+            logger.debug(f"{lp} {row = }")
+
         return result
 
     def get_event_tags(self, eid: int):
-        _select: select = select(self.meta.tables["Events_Tags"]).where(
-                self.meta.tables['Events_Tags'].c.EventId == eid)
+        lp = f"{LP}get_event_tags:"
+        _select: select = select(EventsTags).where(EventsTags.EventId == eid)
         result: CursorResult = self.run_select(_select)
+        for row in result:
+            logger.debug(f"{lp} {row = }")
         return result
 
-        # Delete, then insert, tags should be a list of Tag objects.  Since Tags have AssignedBy and AssignedTime etc, one
-        # should be careful not to lose that data.
-    def set_event_tags(self, eid: int, tags: list):
-        self.meta.tables['Events_Tags'].delete().where(self.meta.tables["Events_Tags"].c.Id == eid)
-        _insert = self.meta.tables["Event"].insert()
-        self.connection.execute(_insert, tags)
+    def set_event_tags(self, eid: int, tags: List[ZMEventTag]):
+        """
+        Delete, then insert, tags should be the complete list of Event_Tag objects for this event.
+        Since Event_Tags have AssignedBy and AssignedTime etc, one should be careful not to lose that data.
+        """
+        # delete the existing tags? What if other tags are already set by the user (i.e. past event)?
 
-        # insert new tags, tags should be a list of Tag objects. These should be new not-existing tags
-    def add_event_tags(self, eid: int, tags: list):
-        _insert = self.meta.tables["Event"].insert()
-        self.connection.execute(_insert, tags)
+        self.connection.execute(
+            delete(EventsTags).where(EventsTags.EventId == eid)
+        )
+        for tag in tags:
+            _insert = insert(EventsTags).values(tag)
+            #EventId=eid, TagId=tag.Id, AssignedBy=None, AssignedDate=datetime.timestamp())
+            self.connection.execute(_insert)
+        self.connection.commit()
+
+
+    def add_event_tags(self, eid: int, tags: List[ZMEventTag]):
+        """
+        insert new tags, tags should be a list of Tag objects. These should be new not-existing tags
+        """
+        for tag in tags:
+            _insert = insert(EventsTags).values(tag)
+            #EventId=eid, TagId=tag.Id, AssignedBy=None, AssignedDate=datetime.timestamp())
+            self.connection.execute(_insert)
+        self.connection.commit()
+
+    def create_tag(self, tag: ZMTag):
+        #_insert = insert(ZMTag).returning('*').values(tag)
+        _insert = insert(ZMTag).values(tag)
+        result = self.connection.execute(_insert)
+        tag['Id'] = result.lastrowid
+        return tag
 
     def event_frames_len(self) -> Optional[int]:
         _select: select = select(self.meta.tables["Events"].c.Frames).where(
@@ -293,7 +346,7 @@ class ZMDB:
                         if cfg_file_db is not None:
                             # There is an entry in the config file, use it even if EN-V or .conf files set it
                             set_to = cfg_file_db
-                            xtra_ = f" (OVERRIDING to '{set_to}' from config file)"
+                            xtra_ = f" (OVERRIDING to '{set_to}' from zomi config file)"
 
                 if not set_to:
                     # not in env, ZM .conf files or config file try internal defaults
@@ -349,7 +402,7 @@ class ZMDB:
         self.meta = MetaData()
         self.meta.reflect(
             bind=self.engine,
-            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones"],
+            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones", "Tags", "Events_Tags"],
         )
 
     def run_select(self, select_stmt: select) -> ResultProxy:

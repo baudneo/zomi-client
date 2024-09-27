@@ -13,6 +13,7 @@ import re
 import signal
 import sys
 import time
+from datetime import datetime
 import warnings
 from pathlib import Path
 from shutil import which
@@ -914,6 +915,37 @@ class ZMClient:
         image_start = time.time()
         async for image, image_name in self.image_pipeline.generate_image():
             image_loop += 1
+            if g.config.detection_settings.images.debug.enabled:
+                logger.debug(f"{lp} Debug image configured, saving image to disk")
+                # image is in bytes
+                debug_image = np.frombuffer(image, dtype=np.uint8)
+                debug_image = cv2.imdecode(debug_image, cv2.IMREAD_COLOR)  # Assuming a color image
+                if g.config.detection_settings.images.debug.path:
+                    _dest = g.config.detection_settings.images.debug.path
+                    logger.debug(f"{lp} Debug image PATH configured: {_dest.as_posix()}")
+                elif g.config.system.image_dir:
+                    _dest = g.config.system.image_dir
+                    logger.debug(
+                        f"{lp} Debug image path NOT configured, using system image_dir: {_dest.as_posix()}"
+                    )
+                else:
+                    _dest = g.config.system.variable_data_path / "images"
+                    logger.debug(
+                        f"{lp} Debug image path and system image_dir NOT configured"
+                        f" using {{system:variable_data_dir}} as base: {_dest.as_posix()}"
+                    )
+
+                img_write_success = cv2.imwrite(
+                    _dest.joinpath(f"debug-img_{g.eid}-{image_loop}.jpg").as_posix(),
+                    debug_image,
+                )
+                if img_write_success:
+                    logger.debug(f"{lp} Debug image written to disk.")
+                else:
+                    logger.warning(f"{lp} Debug image failed to write to disk.")
+                del debug_image
+
+
             if break_out is True:
                 logger.debug(
                     f"perf:{LP} IMAGE LOOP #{image_loop} ({image_name}) took {time.time() - image_start:.5f} s"
@@ -1114,7 +1146,6 @@ class ZMClient:
             )
 
             if not g.past_event:
-                await self.post_process(matched)
                 self.static_objects.pickle(
                     labels=matched_l, confs=matched_c, bboxs=matched_b, write=True
                 )
@@ -1122,6 +1153,8 @@ class ZMClient:
                 logger.info(
                     f"{LP} This is a past event, not post processing or writing static_object data"
                 )
+            # always post process
+            await self.post_process(matched)
 
             if "frame_img" in matched:
                 matched.pop("frame_img")
@@ -2241,41 +2274,7 @@ class ZMClient:
                 write_model=write_model,
                 write_processor=write_processor,
             )
-        if g.config.detection_settings.images.debug.enabled:
-            from .Models.utils import draw_filtered_bboxes
 
-            logger.debug(f"{lp} Debug image configured, drawing filtered out bboxes")
-
-            debug_image = draw_filtered_bboxes(
-                prepared_image, list(self.filtered_labels[image_name])
-            )
-            logger.debug(f"DBG:FIX ME>>> {list(self.filtered_labels[image_name])}")
-            from datetime import datetime
-
-            if g.config.detection_settings.images.debug.path:
-                _dest = g.config.detection_settings.images.debug.path
-                logger.debug(f"{lp} Debug image PATH configured: {_dest.as_posix()}")
-            elif g.config.system.image_dir:
-                _dest = g.config.system.image_dir
-                logger.debug(
-                    f"{lp} Debug image path NOT configured, using system image_dir: {_dest.as_posix()}"
-                )
-            else:
-                _dest = g.config.system.variable_data_path / "images"
-                logger.debug(
-                    f"{lp} Debug image path and system image_dir NOT configured"
-                    f" using {{system:variable_data_dir}} as base: {_dest.as_posix()}"
-                )
-
-            img_write_success = cv2.imwrite(
-                _dest.joinpath(f"debug-img_{datetime.now()}.jpg").as_posix(),
-                debug_image,
-            )
-            if img_write_success:
-                logger.debug(f"{lp} Debug image written to disk.")
-            else:
-                logger.warning(f"{lp} Debug image failed to write to disk.")
-            del debug_image
 
         jpg_file = g.event_path / "objdetect.jpg"
         object_file = g.event_path / "objects.json"
@@ -2384,25 +2383,36 @@ class ZMClient:
                 tags_support = True
         elif zm_ver.major > 1:
             tags_support = True
-
+        logger.debug(f"{lp} ZM version: {zm_ver} -> tags_support: {tags_support}")
         if tags_support:
             # check that the detected object label has a tag created
 
-            # Merge tags
-            tags = g.db.get_event_tags(g.eid)
-            new_tags = []
-            for _l in labels:
-                found = false
-                for _t in tags:
-                    if _t.Name == _l:
-                        found = true
-                        
-                if not found:
-                    # add the detected tag
-                    new_tags.append({'Name':_l, 'EventId':g.eid})
+            # check if the event has tags
+            event_tags = g.db.get_event_tags(g.eid)
+            event_tags_by_tagid = dict(map(lambda i: (i.TagId, i), event_tags))
 
-            if new_tags:
-                g.db.add_event_tags(g.eid, tags)
+            tags = g.db.get_tags()
+            # Should build a Name indexed hash of tags for efficient lookups as well as an Id indexed hash
+
+            tags_by_id = dict(map(lambda i: (i.Id, i), tags))
+            tags_by_name = dict(map(lambda i: (i.Name, i), tags))
+
+            new_event_tags = []
+            for _l in labels:
+                if not _l in tags_by_name :
+                    # Create a new Tag and add it to tags
+                    tag = g.db.create_tag({ 'Name' : _l })
+                    tags_by_name[_l] = tag
+                    tags_by_id[tag['Id']] = tag
+
+                tag = tags_by_name[_l]
+                        
+                if not tag['Id'] in event_tags_by_tagid :
+                    # add the detected tag
+                    new_event_tags.append({'TagId': tag['Id'], 'EventId':g.eid, 'AssignedBy':None, 'AssignedDate':datetime.now()})
+
+            if new_event_tags:
+                g.db.add_event_tags(g.eid, new_event_tags)
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)
