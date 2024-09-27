@@ -2129,7 +2129,7 @@ class ZMClient:
                 if noti_cfg.zmninja.enabled:
                     # zmninja uses FCM which has a limit of messages per month, so it needs a one time strategy
                     logger.debug(f"{lp} ZMNinja notification configured, sending")
-                    # self.notifications.zmninja.send()
+                    self.notifications.zmninja.send()
 
                 if noti_cfg.mqtt.enabled:
                     logger.debug(f"{lp} MQTT notification configured")
@@ -2390,6 +2390,7 @@ class ZMClient:
 
             # Merge tags
             tags = g.db.get_event_tags(g.eid)
+            new_tags = []
             for _l in labels:
                 found = false
                 for _t in tags:
@@ -2398,10 +2399,10 @@ class ZMClient:
                         
                 if not found:
                     # add the detected tag
-                    tags.append({'Name':_l, 'EventId':g.eid})
+                    new_tags.append({'Name':_l, 'EventId':g.eid})
 
-            if tags:
-                g.db.set_event_tags(g.eid, tags)
+            if new_tags:
+                g.db.add_event_tags(g.eid, tags)
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)
