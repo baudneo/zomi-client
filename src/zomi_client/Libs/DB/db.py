@@ -29,7 +29,7 @@ g: Optional[GlobalConfig] = None
 # sqlalchemy allows ORM classes:
 Base = declarative_base()
 
-class EventsTags(Base):
+class DBEventsTags(Base):
     __tablename__ = 'Events_Tags'
     TagId = Column(Integer, ForeignKey('Tags.Id'), primary_key=True)
     EventId = Column(Integer, ForeignKey('Events.Id'), primary_key=True)
@@ -37,7 +37,7 @@ class EventsTags(Base):
     AssignedBy = Column(String)
 
 
-class ZMTag(Base):
+class DBZMTag(Base):
     __tablename__ = 'Tags'
     Id = Column(Integer, primary_key=True)
     Name = Column(VARCHAR(64))
@@ -128,7 +128,7 @@ class ZMDB:
 
     def get_tags(self):
         lp = f"{LP}get_tags:"
-        _select: select = select(ZMTag)
+        _select: select = select(DBZMTag)
         result: CursorResult = self.run_select(_select)
         for row in result:
             logger.debug(f"{lp} {row = }")
@@ -137,13 +137,13 @@ class ZMDB:
 
     def get_event_tags(self, eid: int):
         lp = f"{LP}get_event_tags:"
-        _select: select = select(EventsTags).where(EventsTags.EventId == eid)
+        _select: select = select(DBEventsTags).where(DBEventsTags.EventId == eid)
         result: CursorResult = self.run_select(_select)
         for row in result:
             logger.debug(f"{lp} {row = }")
         return result
 
-    def set_event_tags(self, eid: int, tags: List[ZMTag]):
+    def set_event_tags(self, eid: int, tags: List[DBZMTag]):
         """
         Delete, then insert, tags should be a list of Tag objects. First, get existing tags (if any), add the
         configured obj det tag to those tags.
@@ -153,10 +153,10 @@ class ZMDB:
 
 
         self.connection.execute(
-            delete(EventsTags).where(EventsTags.EventId == eid)
+            delete(DBEventsTags).where(DBEventsTags.EventId == eid)
         )
         for tag in tags:
-            _insert = insert(EventsTags).values(EventId=eid, TagId=tag.Id, AssignedBy=None, AssignedDate=datetime.timestamp())
+            _insert = insert(DBEventsTags).values(EventId=eid, TagId=tag.Id, AssignedBy=None, AssignedDate=datetime.timestamp())
             self.connection.execute(_insert)
         self.connection.commit()
 
