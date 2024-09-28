@@ -145,10 +145,12 @@ class ZMDB:
 
     def set_event_tags(self, eid: int, tags: List[ZMTag]):
         """
-        Delete, then insert, tags should be a list of Tag objects.  Since Tags have AssignedBy and AssignedTime etc,
+        Delete, then insert, tags should be a list of Tag objects. First, get existing tags (if any), add the
+        configured obj det tag to those tags.
+        Since Tags have AssignedBy and AssignedTime etc,
         one should be careful not to lose that data.
         """
-        # delete the existing tags? What if other tags are already set by the user (i.e. past event)?
+
 
         self.connection.execute(
             delete(EventsTags).where(EventsTags.EventId == eid)
