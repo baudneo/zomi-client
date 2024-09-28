@@ -15,6 +15,7 @@ import sys
 import time
 from datetime import datetime
 import warnings
+from datetime import datetime
 from pathlib import Path
 from shutil import which
 from typing import Union, Dict, Optional, List, Any, Tuple, TYPE_CHECKING
@@ -79,7 +80,7 @@ from .Models.config import (
     LoggingSettings,
     Testing,
     DetectionResults,
-    Result,
+    Result, ZMTag,
 )
 
 from .Log import CLIENT_LOGGER_NAME, CLIENT_LOG_FORMAT, BufferedLogHandler
@@ -751,6 +752,9 @@ class ZMClient:
         global g
         strategy: MatchStrategy = g.config.matching.strategy
         img_pull_method = self.config.zoneminder.pull_method
+        if (zm_uname := g.config.zoneminder.api.user):
+            g.user_id = g.db.get_userid_from_name(zm_uname.get_secret_value())
+            logger.debug(f"{lp} User ID: {g.user_id} for user name: {zm_uname.get_secret_value()}")
         if eid:
             g.eid = eid
             logger.info(
@@ -2385,40 +2389,50 @@ class ZMClient:
             tags_support = True
         logger.debug(f"{lp} ZM version: {zm_ver} -> tags_support: {tags_support}")
         if tags_support:
-            # check that the detected object label has a tag created
+            # check that the configured ML tag is in the db
+            # todo: make configurable
 
             # check if the event has tags
-            event_tags = g.db.get_event_tags(g.eid)
-            logger.debug(f"{event_tags}")
-            event_tags_by_tagid = {x.TagId: x for x in event_tags}
+            event_tags_by_tagid = g.db.get_event_tags(g.eid)
+            #logger.debug(f"{event_tags}")
+            #event_tags_by_tagid = {x.TagId: x for x in event_tags.values}
             logger.debug(f"{event_tags_by_tagid}")
 
-            tags = g.db.get_tags()
+            tags_by_id = g.db.get_tags()
             # Should build a Name indexed hash of tags for efficient lookups as well as an Id indexed hash
 
-            #tags_by_id = dict(map(lambda i: (i.Id, i), tags))
-            tags_by_name = {x.Name: x for x in tags}
+            tags_by_name = {x.Name: x for x in tags_by_id.values()}
             logger.debug(f"{tags_by_name}")
 
             new_event_tags = []
             for _l in labels:
                 if not _l in tags_by_name :
                     # Create a new Tag and add it to tags
-                    tag = g.db.create_tag({ 'Name' : _l })
-                    tags_by_name[_l] = tag
-                    tags_by_id[tag['Id']] = tag
+                    new_tag = ZMTag(
+                        Name=objdet_tag_name,
+                        CreateDate=now,
+                        CreatedBy=None if g.user_id is None else g.user_id,
+                        LastAssignedDate=datetime.now(),
+                    )
+                    logger.debug(f"{lp} attempting to add tag: {new_tag.Name}")
+                    new_tag = g.db.create_tag(new_tag)
+                    all_tags[new_tag.Id] = new_tag
+                    tags_by_name[_l] = new_tag
+                    tags_by_id[new_tag.Id] = new_tag
 
                 tag = tags_by_name[_l]
                         
                 if not tag.Id in event_tags_by_tagid :
                     # add the detected tag
-                    new_event_tags.append({'TagId': tag['Id'], 'EventId':g.eid, 'AssignedBy':None, 'AssignedDate':datetime.now()})
+                    new_event_tage = EventTag(
+                        TagId = tag.Id, EventId = g.eid,
+                        AssignedBy = None if g.user_id is None else g.user_id,
+                        AssignedDate = datetime.now(),
+                        )
+                    new_event_tags.append(new_event_tag)
 
             if new_event_tags:
                 g.db.add_event_tags(g.eid, new_event_tags)
-
-        #if store_bounding_boxes:
-            # store bounding boxes in Event_Data
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)

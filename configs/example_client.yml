@@ -472,8 +472,6 @@ detection_settings:
     # - Save debug images to disk (Every frame grabbed from the source)
     # - BE AWARE, if you leave this on and forget, it will eat up disk space
     debug:
-      # - Shows bounding box of filtered out detections in RED
-      # - Everything that didn't make it past filters will be drawn in red
       enabled: no
       # - Where to save the debug images Default: <images_dir>/debug
       path: ${IMAGE_DIR}/debug
