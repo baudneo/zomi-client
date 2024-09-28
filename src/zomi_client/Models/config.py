@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import (
     Union,
     Any,
     Optional,
-    AnyStr,
+    AnyStr, Annotated,
 )
 
 import numpy as np
@@ -586,6 +587,19 @@ class MonitorsSettings(BaseModel):
     skip_imported_zones: Optional[bool] = Field(False)
     zones: Optional[Dict[str, MonitorZones]] = Field(default_factory=dict)
 
+
+class ZMTag(BaseModel):
+    Id: int
+    Name: Annotated[str, Field(..., max_length=64)]
+    CreateDate: datetime
+    CreatedBy: int
+    LastAssignedDate: datetime
+
+class ZMEventsTags(BaseModel):
+    TagId: int
+    EventId: int
+    AssignedDate: datetime
+    AssignedBy: int
 
 class ConfigFileModel(BaseModel):
     testing: Testing = Field(default_factory=Testing)
