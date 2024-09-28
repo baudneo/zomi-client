@@ -14,6 +14,7 @@ import signal
 import sys
 import time
 import warnings
+from datetime import datetime
 from pathlib import Path
 from shutil import which
 from typing import Union, Dict, Optional, List, Any, Tuple, TYPE_CHECKING
@@ -78,7 +79,7 @@ from .Models.config import (
     LoggingSettings,
     Testing,
     DetectionResults,
-    Result,
+    Result, ZMTag,
 )
 
 from .Log import CLIENT_LOGGER_NAME, CLIENT_LOG_FORMAT, BufferedLogHandler
@@ -2387,23 +2388,59 @@ class ZMClient:
             tags_support = True
         logger.debug(f"{lp} ZM version: {zm_ver} -> tags_support: {tags_support}")
         if tags_support:
-            # check that the detected object label has a tag created
+            # check that the configured ML tag is in the db
+            # todo: make configurable
+            objdet_tag_name = "ml"
+            all_tags = g.db.get_tags()
+            objdet_tag_id: Optional[int] = None
+            for tag_ in all_tags.values():
+                if tag_.Name == objdet_tag_name:
+                    logger.debug(f"{lp} configured ML tag '{objdet_tag_name}' found in DB 'Tags' table")
+                    objdet_tag_id = tag_.Id
+                    break
+            else:
+                logger.debug(f"{lp} configured ML tag '{objdet_tag_name}' not found in DB 'Tags' table, creating it")
+                now = datetime.now()
+                new_tag = ZMTag(
+                    Name=objdet_tag_name,
+                    CreateDate=now,
+                    CreatedBy=None if g.user_id is None else g.user_id,
+                    LastAssignedDate=now,
+                )
+                logger.debug(f"{lp} attempting to add tag: {new_tag.Name}")
+                new_tag = g.db.create_tag(new_tag)
+                all_tags[new_tag.Id] = new_tag
+                objdet_tag_id = new_tag.Id
+                logger.debug(f"{lp} added tag: {new_tag.Name} with ID: {new_tag.Id}")
+
 
             # check if the event has tags
-            event_tags = g.db.get_event_tags(g.eid)
-            tags = g.db.get_tags()
+            events_tags = g.db.get_event_tags(g.eid)
+            event_tags = []
+            event_has_objdet_tag = False
+
+            for etag in events_tags.values():
+                if etag.TagId in all_tags:
+                    _tag = all_tags[etag.TagId]
+                    event_tags.append(_tag)
+                    if _tag.Name == objdet_tag_name:
+                        event_has_objdet_tag = True
+
             if event_tags:
-                # check if the event has the detected labels tag
-                # if "detected" not in tags:
-                    # add the detected tag
-                    # tags.append("detected")
-                    # g.db.set_event_tags(g.eid, tags)
                 logger.debug(f"{lp} Event has tags: {event_tags}")
+                # check if the event has the detected labels tag
+                if not event_has_objdet_tag:
+                    # add the detected tag
+                    event_tags.append(all_tags[objdet_tag_id])
+                    logger.debug(f"{lp} Event does not have the configured ML tag: {objdet_tag_name}, adding it")
+                else:
+                    logger.debug(f"{lp} Event has the configured ML tag: {objdet_tag_name}")
+
             else:
-                # add the detected tag
-                # tags = ["detected"]
-                # g.db.set_event_tags(g.eid, tags)
-                logger.debug(f"{lp} Event has no tags, adding 'detected' tag")
+                logger.debug(f"{lp} Event has no tags, adding configured ML tag: {objdet_tag_name}")
+                event_tags.append(all_tags[objdet_tag_id])
+            logger.debug(f"{lp} Writing tags to event: {g.eid} - {event_tags}")
+            g.db.set_event_tags(g.eid, event_tags)
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)

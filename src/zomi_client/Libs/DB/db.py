@@ -19,7 +19,7 @@ from sqlalchemy.orm import declarative_base
 from ...Log import CLIENT_LOGGER_NAME
 
 if TYPE_CHECKING:
-    from ...Models.config import GlobalConfig, ZMDBSettings, ClientEnvVars
+    from ...Models.config import GlobalConfig, ZMDBSettings, ClientEnvVars, ZMTag, ZMEventsTags
 
 logger = logging.getLogger(CLIENT_LOGGER_NAME)
 LP = "zmdb:"
@@ -126,40 +126,93 @@ class ZMDB:
         self.connection.execute(_update)
         self.connection.commit()
 
-    def get_tags(self):
+    def get_tags(self) -> Dict[int, ZMTag]:
+        """
+        Query the DB for tags.
+
+        Returns:
+            Dict[int, ZMTag]: A dict of ZMTag pydantic models with the Tag Id as the key.
+        """
+        from ...Models.config import ZMTag
+
         lp = f"{LP}get_tags:"
         _select: select = select(DBZMTag)
         result: CursorResult = self.run_select(_select)
+        ret = {}
         for row in result:
             logger.debug(f"{lp} {row = }")
+            ret[row[0]] = ZMTag(
+                Id=row[0],
+                Name=row[1],
+                CreateDate=row[2],
+                CreatedBy=row[3],
+                LastAssignedDate=row[4]
+            )
+        logger.debug(f"{lp} {ret}")
+        return ret
 
-        return result
+    def create_tag(self, tag: ZMTag) -> ZMTag:
+        """
+        Create a new tag in the DB. Pydantic model translated to ORM model.
 
-    def get_event_tags(self, eid: int):
+        the `tag` object Id will be ignored, as it is auto-incremented by the DB.
+
+        Returns:
+            ZMTag: The newly created tag with the Id set.
+        """
+        stmt = insert(DBZMTag).values(
+            Name=tag.Name,
+            CreateDate=tag.CreateDate,
+            CreatedBy=tag.CreatedBy,
+            LastAssignedDate=tag.LastAssignedDate
+        )
+        result: CursorResult = self.connection.execute(stmt)
+        self.connection.commit()
+        tag.Id = result.inserted_primary_key[0]
+        return tag
+
+    def get_event_tags(self, eid: int) -> Dict[int, ZMEventsTags]:
+        """
+        Query the database for tags assigned to an event by event id.
+
+        Returns:
+            A dict of ZMEventsTags pydantic models with the Tag Id as the key.
+        """
+        from ...Models.config import ZMEventsTags
+
         lp = f"{LP}get_event_tags:"
         _select: select = select(DBEventsTags).where(DBEventsTags.EventId == eid)
         result: CursorResult = self.run_select(_select)
+        ret = {}
         for row in result:
-            logger.debug(f"{lp} {row = }")
-        return result
+            ret[row[0]] = ZMEventsTags(
+                TagId=row[0],
+                EventId=row[1],
+                AssignedDate=row[2],
+                AssignedBy=row[3]
+            )
+        logger.debug(f"{lp} {ret}")
+        return ret
 
-    def set_event_tags(self, eid: int, tags: List[DBZMTag]):
+    def set_event_tags(self, eid: int, tags: List[ZMTag]):
         """
         Delete, then insert, tags should be a list of Tag objects. First, get existing tags (if any), add the
         configured obj det tag to those tags.
         Since Tags have AssignedBy and AssignedTime etc,
         one should be careful not to lose that data.
         """
-
-
         self.connection.execute(
             delete(DBEventsTags).where(DBEventsTags.EventId == eid)
         )
         for tag in tags:
-            _insert = insert(DBEventsTags).values(EventId=eid, TagId=tag.Id, AssignedBy=None, AssignedDate=datetime.timestamp())
+            _insert = insert(DBEventsTags).values(
+                EventId=eid,
+                TagId=tag.Id,
+                AssignedBy=None if g.user_id is None else g.user_id,
+                AssignedDate=datetime.now()
+            )
             self.connection.execute(_insert)
         self.connection.commit()
-
 
     def event_frames_len(self) -> Optional[int]:
         _select: select = select(self.meta.tables["Events"].c.Frames).where(
