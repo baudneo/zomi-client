@@ -1,10 +1,8 @@
-# ZoneMinder Machine Learning Client (ZoMi ML Client)
-### NOTE
-__*YOU MUST UPGRADE PIP before attempting to install anything in this repo!*__
 
-:warning: 
-**This software is currently in ALPHA stage, expect issues.**
-:warning:
+
+# ZoneMinder Machine Learning Client (ZoMi ML Client)
+[!CAUTION]
+> :warning: This software is in **ALPHA** stage, expect issues and incomplete, unoptimized, janky code ;) :warning:
 
 This is a project aiming to update how [ZoneMinder](https://github.com/ZoneMinder/zoneminder) Object Detection works.
 A server and client are supplied to allow for easy integration with ZoneMinder or works of software based on ZM.
