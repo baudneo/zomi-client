@@ -589,7 +589,7 @@ class MonitorsSettings(BaseModel):
 
 
 class ZMTag(BaseModel):
-    Id: int
+    Id: Optional[int] = None
     Name: Annotated[str, Field(..., max_length=64)]
     CreateDate: datetime
     CreatedBy: int
