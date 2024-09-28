@@ -750,6 +750,9 @@ class ZMClient:
         global g
         strategy: MatchStrategy = g.config.matching.strategy
         img_pull_method = self.config.zoneminder.pull_method
+        if (zm_uname := g.config.zoneminder.api.user):
+            g.user_id = g.db.get_userid_from_name(zm_uname.get_secret_value())
+            logger.debug(f"{lp} User ID: {g.user_id} for user name: {zm_uname.get_secret_value()}")
         if eid:
             g.eid = eid
             logger.info(

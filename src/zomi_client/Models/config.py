@@ -722,6 +722,7 @@ class GlobalConfig(BaseModel, arbitrary_types_allowed=True, extra="allow"):
     mon_height: Optional[int] = None
     mon_colorspace: Optional[int] = None
     frame_buffer: Optional[Dict] = Field(default_factory=dict)
+    user_id: Optional[int] = None
 
     Environment: Optional[Union[ClientEnvVars]] = None
     imported_zones: list = Field(default_factory=list)

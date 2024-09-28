@@ -217,6 +217,24 @@ class ZMDB:
             logger.error(f"{lp} unknown scheme {scheme}")
         return ret_val
 
+    def get_userid_from_name(self, name: str) -> Optional[int]:
+        """
+        Retrieve the UserId from the DB for a given username.
+        Returns None if no user is found.
+
+        """
+        lp = f"{LP}get_userid_from_name:"
+        _select: select = select(self.meta.tables["Users"].c.Id).where(
+            self.meta.tables["Users"].c.Username == name
+        )
+        result: CursorResult = self.run_select(_select)
+        # check if there are any results
+        if result.rowcount == 0:
+            return None
+        elif result.rowcount > 1:
+            logger.warning(f"{lp} more than one user found with name '{name}', this is unexpected. Returning 1st result.")
+        return result.fetchone()[0]
+
     def read_zm_configs(self):
         files = []
         conf_path = g.config.zoneminder.conf_dir
@@ -380,7 +398,7 @@ class ZMDB:
         self.meta = MetaData()
         self.meta.reflect(
             bind=self.engine,
-            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones", "Tags", "Events_Tags"],
+            only=["Events", "Monitors", "Monitor_Status", "Storage", "Frames", "Config", "Zones", "Tags", "Events_Tags", "Users"],
         )
 
     def run_select(self, select_stmt: select) -> ResultProxy:
