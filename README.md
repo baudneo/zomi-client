@@ -7,18 +7,11 @@
 This is a project aiming to update how [ZoneMinder](https://github.com/ZoneMinder/zoneminder) Object Detection works.
 A server and client are supplied to allow for easy integration with ZoneMinder or works of software based on ZM.
 
-## Upgrade Pip
-```bash
-# System wide
-sudo python3 -m pip install --upgrade pip
-# User
-python3 -m pip install --upgrade pip
-```
+This repo is not associated with the ZoneMinder organization or any of its members.
 
 ## Thanks
 
 - [@pliablepixels](https://github.com/pliablepixels) for [zmNinja](https://github.com/ZoneMinder/zmNinja), [zmeventnotification](https://github.com/ZoneMinder/zmeventnotification), [mlapi](https://github.com/ZoneMinder/mlapi) and [PyZM](https://github.com/ZoneMinder/pyzm).
-- [@connortechnology](https://github.com/connortechnology) for their work on [ZoneMinder](https://zoneminder.com)
 
 # Prerequisites
 
@@ -52,8 +45,3 @@ The client grabs images, sends the images to a ZoMi ML API server, filters detec
 ## Install Script
 The [install script](examples/install.py) will install the client for you. It will also install the required python packages into its own venv.
 You can supply the script with options to configure the install. Below is a list of the options and their defaults.
-
-## Install Script Options
-
-- `--debug` : Enable debug logging
-- 
