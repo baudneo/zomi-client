@@ -1,10 +1,3 @@
-## Please support ZoneMinder if you can!
-If you use software from the [ZoneMinder organization](https://github.com/ZoneMinder)
-please consider [sponsoring ZoneMinder](https://github.com/sponsors/ZoneMinder). ZoneMinder has been free with
-a paid support option and paid bounties but, ZoneMinder Org needs help with bringing cash flow in. If you have the means, please consider sponsoring ZoneMinder, Thanks!
-
-To clarify; I do not receive any of the funds, it goes strictly to the main developer of ZM.
-
 # ZoneMinder Machine Learning Client (ZoMi ML Client)
 ### NOTE
 __*YOU MUST UPGRADE PIP before attempting to install anything in this repo!*__
