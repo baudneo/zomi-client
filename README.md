@@ -1,4 +1,4 @@
-
+# Development has been moved to a private repo, this repo will be archived.
 
 # ZoneMinder Machine Learning Client (ZoMi ML Client)
 >[!CAUTION]

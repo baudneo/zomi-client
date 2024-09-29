@@ -48,6 +48,14 @@ zoneminder:
   conf_dir: /etc/zm
   # - The web portal URL. (https://zm.myDomain.com/zm , http://localhost/zm, etc.) * REQUIRED *
   portal_url: ${ZM_PORTAL}
+  # - ZM has a new tagging system beginning in 1.37.44.
+  # - If you are using a version of ZM that supports tags, set this to yes.
+  tags:
+    enabled: no
+    # Leave this empty to not tag any events with a custom tag name
+    tag_name: ml
+    # tag the event with detected object label(s), i.e. person, car. etc.
+    tag_with_labels: no
 
   # - API specific settings
   api:

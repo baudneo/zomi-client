@@ -195,6 +195,12 @@ class ZoneMinderSettings(BaseSettings, extra="allow"):
         model_config = SettingsConfigDict(env_prefix="ML_CLIENT_ZM_MISC_")
         write_notes: bool = Field(True)
 
+    class ZMTagsConfig(DefaultEnabled):
+        tag_name: Optional[str] = Field("ml")
+        tag_with_labels: Optional[bool] = Field(False)
+
+
+
     class ZMAPISettings(BaseSettings):
         model_config = SettingsConfigDict(
             env_prefix="ML_CLIENT_ZM_API_", extra="allow"
@@ -218,6 +224,7 @@ class ZoneMinderSettings(BaseSettings, extra="allow"):
     api: Optional[ZMAPISettings] = Field(default_factory=ZMAPISettings)
     db: Optional[ZMDBSettings] = Field(default_factory=ZMDBSettings)
     pull_method: Optional[PullMethod] = Field(default_factory=ZMSPullMethod)
+    tags: Optional[ZMTagsConfig] = Field(default_factory=ZMTagsConfig)
 
 
     _validate_portal_url = field_validator("portal_url", mode="before")(
