@@ -2386,8 +2386,9 @@ class ZMClient:
                 tags_support = True
         elif zm_ver.major > 1:
             tags_support = True
-        logger.debug(f"{lp} ZM version: {zm_ver} -> tags_support: {tags_support}")
+        # logger.debug(f"{lp} ZM version: {zm_ver} -> tags_support: {tags_support}")
         if tags_support:
+            tag_names_to_create = []
             # check that the configured ML tag is in the db
             # todo: make configurable
             objdet_tag_name = "ml"
