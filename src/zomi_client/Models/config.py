@@ -608,12 +608,34 @@ class ZMEventsTags(BaseModel):
     AssignedDate: datetime
     AssignedBy: int
 
+class MQTTSettings(BaseModel):
+    class MQTTImageSettings(DefaultNotEnabled):
+        format: Optional[str] = Field("base64", pattern="^(bytes|base64)$")
+        retain: Optional[bool] = True
+
+    keep_alive: Optional[int] = Field(60, ge=1)
+    publish_topic: Optional[str] = Field("zomi-client")
+    subscribe_topic: Optional[str] = Field("zoneminder")
+    broker: Optional[str] = None
+    port: Optional[int] = Field(1883)
+    user: Optional[str] = None
+    pass_: Optional[SecretStr] = Field(None, alias="pass")
+    tls_secure: Optional[bool] = Field(True)
+    tls_ca: Optional[Path] = None
+    tls_cert: Optional[Path] = None
+    tls_key: Optional[Path] = None
+    retain: Optional[bool] = Field(False)
+    qos: Optional[int] = Field(0)
+
+    image: Optional[MQTTImageSettings] = Field(default_factory=MQTTImageSettings)
+
 class ConfigFileModel(BaseModel):
     testing: Testing = Field(default_factory=Testing)
     substitutions: Dict[str, str] = Field(default_factory=dict)
     config_path: Path = Field(Path("/etc/zm"))
     system: SystemSettings = Field(default_factory=SystemSettings)
     zoneminder: ZoneMinderSettings = Field(default_factory=ZoneMinderSettings)
+    mqtt: MQTTSettings = Field(default_factory=MQTTSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     mlapi: ServerRoute = Field(default_factory=ServerRoute)
     animation: AnimationSettings = Field(default_factory=AnimationSettings)
