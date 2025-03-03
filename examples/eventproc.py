@@ -139,6 +139,7 @@ async def main():
         f"Config File: {cfg_file}"
     )
     g.config = parse_client_config_file(cfg_file)
+    g.config.mqtt = None
     zm_client = zomi_client.main.ZMClient(global_config=g)
     _end_init = time.time()
     __event_modes = ["event", ""]
