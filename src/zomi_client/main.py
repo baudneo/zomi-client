@@ -13,13 +13,16 @@ import re
 import signal
 import sys
 import time
+import uuid
 import warnings
+from asyncio.taskgroups import TaskGroup
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from shutil import which
-from typing import Union, Dict, Optional, List, Any, Tuple, TYPE_CHECKING
+from typing import Union, Dict, Optional, List, Any, Tuple, TYPE_CHECKING, NamedTuple
 
-from .Models.validators import str2bool
+import uvloop
 
 try:
     import cv2
@@ -39,6 +42,7 @@ try:
     import yaml
     from pydantic import BaseModel, Field
     from shapely.geometry import Polygon
+    import aiomqtt
 except ImportError as e:
     msg = (
         f"Some dependencies are not installed. Please install them to enable "
@@ -54,8 +58,10 @@ except ImportError as e:
     Polygon = None
     BaseModel = None
     Field = None
+    aiomqtt = None
     raise e
 
+from .Models.validators import str2bool
 from .Libs.Media.pipeline import (
     APIImagePipeLine,
     ZMSImagePipeLine,
@@ -100,7 +106,8 @@ logger.addHandler(logging.NullHandler())
 
 g: Optional[GlobalConfig] = None
 LP: str = "Client:"
-
+BIRTH_MSG = b'online'
+WILL_MSG = b'offline'
 
 def set_logger(supplied_logger: logging.Logger) -> None:
     global logger
@@ -493,6 +500,7 @@ class Notifications:
 class ZMClient:
     config_file: Union[str, Path]
     config_hash: CFGHash
+    mqtt_client: Optional[MQTTClient] = None
     raw_config: str
     parsed_cfg: Dict
     config: ConfigFileModel
@@ -503,6 +511,8 @@ class ZMClient:
     eid: int
     image_pipeline: Union[APIImagePipeLine, ZMSImagePipeLine]
     _comb: Dict
+    loop: uvloop.Loop
+    task_group: Dict = {}
 
     @staticmethod
     def set_live_event(is_live: bool):
@@ -540,14 +550,10 @@ class ZMClient:
         """
         global logger
 
-        if not ZM_INSTALLED:
-            _msg = "ZoneMinder is not installed, it is a requirement to be installed on a ZoneMinder host!"
-            logger.error(_msg)
-            raise RuntimeError(_msg)
         lp = f"{LP}init:"
 
         # setup async signal catcher
-        loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_event_loop()
         if not logger:
             logger = create_logs()
         signals = ("SIGINT", "SIGTERM")
@@ -555,11 +561,11 @@ class ZMClient:
             f"{lp} registering signal handler for {' ,'.join(signals).rstrip(',')}"
         )
 
-        loop.add_signal_handler(
+        self.loop.add_signal_handler(
             getattr(signal, "SIGINT"),
             self.signal_handler_int,
         )
-        loop.add_signal_handler(
+        self.loop.add_signal_handler(
             getattr(signal, "SIGTERM"),
             self.signal_handler_term,
         )
@@ -580,12 +586,7 @@ class ZMClient:
         self.config = get_global_config().config
         futures: List[concurrent.futures.Future] = []
         _hash: concurrent.futures.Future
-
         # _hash_input = CFGHash(config_file=g.config_file)
-        # loop = asyncio.get_event_loop()
-        # loop.create_task(self._sort_routes())
-        # loop.create_task(self._init_api())
-        # loop.create_task(self._init_db())
         with concurrent.futures.ThreadPoolExecutor(
             thread_name_prefix="init", max_workers=g.config.system.thread_workers
         ) as executor:
@@ -596,6 +597,34 @@ class ZMClient:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
         # self.config_hash = _hash.result()
+
+    async def astart(self):
+        """Used to start ZMClient in MQTT mode. Will sub to a topic and listen for ZM events"""
+        c = self.config.mqtt
+        if c and c.broker:
+            port = c.port
+            if not port:
+                port = 1883
+            username = c.username
+            password = c.password
+            self.mqtt_client = MQTTClient(broker_host=c.broker, broker_port=port, username=username, password=password)
+            await self.mqtt_client.start()
+            async with TaskGroup() as self.task_group:
+                self.task_group.create_task(self.event_worker())
+
+
+    async def event_worker(self):
+        # this will be run as an async task, it will check the self.mqtt_client.event_queue and pull events from there
+        lp = f"{LP}event:"
+        logger.info(f"{lp} Starting, waiting for ZM motion events...")
+        async for event in self.mqtt_client.event_queue.get():
+            event: EventQueueEntry
+            logger.info(f"{lp} ZM event ({event.event_type.value}) received: ID: {event.id} from Monitor: {event.mid}")
+            if event.event_type == EventType.start:
+                await self.detect(event.eid, event.mid)
+            elif event.event_type == EventType.end:
+                logger.debug(f"{lp} ZM event end, no action taken")
+
 
     async def _get_db_data(self, eid: int):
         """Get data from the database"""
@@ -2445,3 +2474,158 @@ class ZMClient:
 
         # send notifications
         self.send_notifications(prepared_image, pred_out, results=matches)
+
+
+class EventType(str, Enum):
+    start = "start"
+    end = "end"
+
+class EventQueueEntry(NamedTuple):
+    event_type: EventType
+    mid: int
+    eid: int
+
+
+
+
+class MQTTClient:
+    lp: str = "mqtt:"
+    availability = False
+
+    # _ = await self._client.publish(
+    #     f"{self.topic}/availability/{device_uuid}", availability, qos=0
+    # )
+
+    async def connect(self):
+        lp = f"{self.lp}connect:"
+        try:
+            await self._client.__aexit__(None, None, None)
+        except Exception as innr_exc:
+            pass
+        logger.debug(f"{lp} Connecting to MQTT broker...")
+        try:
+            _ = await self._client.__aenter__()
+        except aiomqtt.MqttError as ce:
+            logger.error(
+                "%s Connection failed: %s" % (lp, ce),
+                exc_info=True,
+            )
+            try:
+                await self._client.__aexit__(None, None, None)
+            except Exception as innr_exc:
+                pass
+            if "name or service not known" in str(ce).casefold():
+                logger.critical(f"{lp} MQTT broker host is not replying, please check if the MQTT broker is up or if you have a typo in the host address/name")
+                # send sigterm to bring async loop down
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        else:
+            logger.info("%s Connected to MQTT broker: %s port: %s" % (lp, self.broker_host, self.broker_port))
+
+
+    async def async_birth_message(self):
+        await self._client.publish(f"{self.pub_topic}/status", BIRTH_MSG)
+
+    async def async_will_message(self):
+        await self._client.publish(f"{self.pub_topic}/status", WILL_MSG)
+
+    def __init__(
+        self,
+        broker_host: str,
+        sub_topic: Optional[str] = None,
+        pub_topic: Optional[str] = None,
+        broker_port: Optional[int] = 1883,
+        username: Optional[str] = None,
+        password: Optional[str] = None
+    ):
+        lp = f"{self.lp}init:"
+
+        self.event_queue = asyncio.Queue()
+        self.shutdown_complete: bool = False
+        self.pub_topic = pub_topic
+        self.sub_topic = sub_topic
+        self.broker_host = broker_host
+        self.broker_port = int(broker_port)
+        self.broker_username = username
+        self.broker_password = password
+        self.broker_client_id = f"zomi-client_{uuid.uuid4()}"
+
+        lwt = aiomqtt.Will(
+            topic=f"{pub_topic}/status",
+            payload=WILL_MSG
+        )
+        self._client = aiomqtt.Client(
+            hostname=broker_host,
+            port=self.broker_port,
+            username=username,
+            password=password,
+            identifier=self.broker_client_id,
+            will=lwt,
+            # logger=logger,
+        )
+
+    async def start(self):
+        lp = f"{self.lp}start:"
+        while True:
+            if not self._client._connected:
+                await self.connect()
+            try:
+                await self.start_listening()
+            except aiomqtt.MqttError as msg_err:
+                logger.warning(f"{lp} MQTT error: {msg_err}")
+                continue
+
+    async def start_listening(self):
+        """Start listening for MQTT messages on subscribed topics"""
+        lp = f"{self.lp}rcv:"
+        topics = [
+            (f"{self.sub_topic}/monitor/#", 0),
+        ]
+        await self._client.subscribe(topics)
+        logger.debug(f"{lp} Subscribed to MQTT topics: {[x[0] for x in topics]}. "
+                     f"Waiting for MQTT messages...")
+        async for message in self._client.messages:
+            topic = message.topic
+            payload = message.payload
+            rqos = message.qos
+            logger.debug(
+                f"{lp} [QoS: {rqos} | Topic: {topic}] Payload => {payload}"
+            )
+            _topic = topic.value.split("/")
+            # Messages sent to the zoneminder topic /zoneminder/monitor/<monitor ID>
+            if _topic[1] == "monitor":
+                mid = int(_topic[2])
+                etype = EventType.start
+                # payload of start -> b'event start: 538754'
+                if payload and payload.startswith(b'event start:'):
+                    # start of an event
+                    eid = int(payload.split(b" ")[-1])
+                # payload of end -> b'event end: 538754'
+                elif payload and payload.startswith(b'event end:'):
+                    # end of an event
+                    eid = int(payload.split(b" ")[-1])
+                    etype = EventType.end
+                # notify ZMClient that there is an event to process, wait for it to .get()
+                await self.event_queue.put(EventQueueEntry(etype, mid, eid))
+
+    async def stop(self):
+        lp = f"{self.lp}stop:"
+        logger.info(f"{lp} Stopping, publishing LAST WILL payload and disconnecting...")
+        await self.async_will_message()
+        try:
+            logger.debug(
+                f"{lp} Calling disconnect..."
+            )
+            await self._client.__aexit__(None, None, None)
+        except aiomqtt.MqttError as ce:
+            logger.error(
+                "%s MQTT disconnect failed: %s" % (lp, ce),
+                exc_info=True,
+            )
+        except Exception as e:
+            logger.warning("%s MQTT disconnect failed: %s" % (lp, e), exc_info=True)
+        else:
+            logger.info(f"{lp} MQTT client gracefully disconnected...")
+
+        logger.debug(f"{lp} Signalling MQTT client shutdown complete...")
+        self.shutdown_complete = True
