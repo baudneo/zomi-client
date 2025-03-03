@@ -614,11 +614,11 @@ class MQTTSettings(BaseModel):
         retain: Optional[bool] = True
 
     keep_alive: Optional[int] = Field(60, ge=1)
-    publish_topic: Optional[str] = Field("zomi-client")
-    subscribe_topic: Optional[str] = Field("zoneminder")
+    publish_topic: Optional[str] = Field("zomi_client", alias="pub_topic")
+    subscribe_topic: Optional[str] = Field("zoneminder", alias="sub_topic")
     broker: Optional[str] = None
     port: Optional[int] = Field(1883)
-    user: Optional[str] = None
+    user: Optional[str] = Field(None)
     pass_: Optional[SecretStr] = Field(None, alias="pass")
     tls_secure: Optional[bool] = Field(True)
     tls_ca: Optional[Path] = None

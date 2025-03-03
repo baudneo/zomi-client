@@ -15,7 +15,6 @@ import sys
 import time
 import uuid
 import warnings
-from asyncio.taskgroups import TaskGroup
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -512,11 +511,11 @@ class ZMClient:
     image_pipeline: Union[APIImagePipeLine, ZMSImagePipeLine]
     _comb: Dict
     loop: uvloop.Loop
-    task_group: Dict = {}
+    task_group: List = []
 
     @staticmethod
     def set_live_event(is_live: bool):
-        """Set the live status of the event globaly."""
+        """Set the live status of the event globally."""
         if is_live is True:
             if g:
                 g.past_event = False
@@ -535,7 +534,8 @@ class ZMClient:
     def signal_handler_clean_up(self, *args, **kwargs):
         self.db.clean_up()
         self.api.session.close()
-        asyncio.wait(asyncio.get_event_loop().create_task(self.api.async_session.close()))
+        if self.api.async_session:
+            asyncio.wait(asyncio.get_event_loop().create_task(self.api.async_session.close()))
         asyncio.get_event_loop().stop()
 
     async def clean_up(self):
@@ -598,28 +598,34 @@ class ZMClient:
                 future.result()
         # self.config_hash = _hash.result()
 
-    async def astart(self):
+    async def mqtt_start(self):
         """Used to start ZMClient in MQTT mode. Will sub to a topic and listen for ZM events"""
         c = self.config.mqtt
         if c and c.broker:
             port = c.port
             if not port:
                 port = 1883
-            username = c.username
-            password = c.password
-            self.mqtt_client = MQTTClient(broker_host=c.broker, broker_port=port, username=username, password=password)
-            await self.mqtt_client.start()
-            async with TaskGroup() as self.task_group:
-                self.task_group.create_task(self.event_worker())
+            username = c.user
+            password = None
+            if c.pass_:
+                password = c.pass_.get_secret_value()
+            logger.debug(f"Starting MQTT Client with settings: {c}")
+            self.mqtt_client = MQTTClient(broker_host=c.broker, broker_port=port, username=username, password=password, sub_topic=c.subscribe_topic, pub_topic=c.publish_topic)
+            results = await asyncio.gather(*[self.mqtt_client.start(), self.event_worker()])
+            logger.debug(f"MQTT Client and event listener started with results: {results}")
+        elif not c:
+            raise ValueError("MQTT settings not found in config file")
+        elif not c.broker:
+            raise ValueError("MQTT broker settings not found in config file")
 
 
     async def event_worker(self):
         # this will be run as an async task, it will check the self.mqtt_client.event_queue and pull events from there
         lp = f"{LP}event:"
         logger.info(f"{lp} Starting, waiting for ZM motion events...")
-        async for event in self.mqtt_client.event_queue.get():
-            event: EventQueueEntry
-            logger.info(f"{lp} ZM event ({event.event_type.value}) received: ID: {event.id} from Monitor: {event.mid}")
+        while True:
+            event: EventQueueEntry = await self.mqtt_client.event_queue.get()
+            logger.info(f"{lp} ZM event ({event.event_type.value}) received: ID: {event.eid} from Monitor: {event.mid}")
             if event.event_type == EventType.start:
                 await self.detect(event.eid, event.mid)
             elif event.event_type == EventType.end:
@@ -2554,6 +2560,7 @@ class MQTTClient:
             topic=f"{pub_topic}/status",
             payload=WILL_MSG
         )
+        logger.debug(f"{lp} Creating MQTT client: broker: {broker_host} user/pass: {username}/{password}")
         self._client = aiomqtt.Client(
             hostname=broker_host,
             port=self.broker_port,
@@ -2566,10 +2573,10 @@ class MQTTClient:
 
     async def start(self):
         lp = f"{self.lp}start:"
+        logger.debug(f"{lp} Starting MQTT client...")
         while True:
-            if not self._client._connected:
-                await self.connect()
-                await self.start_subscribe()
+            await self.connect()
+            await self.start_subscribe()
             try:
                 await self.start_listening()
             except aiomqtt.MqttError as msg_err:
@@ -2581,8 +2588,8 @@ class MQTTClient:
         topics = [
             (f"{self.sub_topic}/monitor/#", 0),
         ]
+        logger.info(f"{lp} Subscribing to MQTT topics: {[x[0] for x in topics]} ...")
         await self._client.subscribe(topics)
-        logger.info(f"{lp} Subscribed to MQTT topics: {[x[0] for x in topics]}")
 
     async def start_listening(self):
         """Start listening for MQTT messages on subscribed topics"""
@@ -2599,6 +2606,7 @@ class MQTTClient:
             # Messages sent to the zoneminder topic /zoneminder/monitor/<monitor ID>
             if _topic[1] == "monitor":
                 mid = int(_topic[2])
+                eid = None
                 etype = EventType.start
                 # payload of start -> b'event start: 538754'
                 if payload and payload.startswith(b'event start:'):
@@ -2609,8 +2617,10 @@ class MQTTClient:
                     # end of an event
                     eid = int(payload.split(b" ")[-1])
                     etype = EventType.end
-                # notify ZMClient that there is an event to process, wait for it to .get()
-                await self.event_queue.put(EventQueueEntry(etype, mid, eid))
+                if mid is not None and eid is not None:
+                    # notify ZMClient that there is an event to process, wait for it to .get()
+                    await self.event_queue.put(EventQueueEntry(etype, mid, eid))
+
 
     async def stop(self):
         lp = f"{self.lp}stop:"

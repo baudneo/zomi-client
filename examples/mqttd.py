@@ -89,14 +89,15 @@ if __name__ == "__main__":
         raise ValueError("No MQTT config found in config file!")
     zm_client = zomi_client.main.ZMClient(global_config=g)
     try:
-        loop.run_until_complete(zm_client.astart())
+        logger.debug("STARTING async mqtt_start()")
+        loop.run_until_complete(zm_client.mqtt_start())
     except Exception as e:
         logger.error(f"{LP} Error in main(): {e}", exc_info=True)
-        from zomi_client import Log
-        for handler in logger.handlers:
-            if isinstance(handler, Log.BufferedLogHandler):
-                # should only print out if there is no file logging going on
-                handler.flush2()
+        # from zomi_client import Log
+        # for handler in logger.handlers:
+        #     if isinstance(handler, Log.BufferedLogHandler):
+        #         # should only print out if there is no file logging going on
+        #         handler.flush2()
 
     logger.info(f"perf:{LP}FINAL:  Lifetime -> {time.time() - _start:.5f} seconds")
     if not loop.is_closed():
