@@ -2569,21 +2569,25 @@ class MQTTClient:
         while True:
             if not self._client._connected:
                 await self.connect()
+                await self.start_subscribe()
             try:
                 await self.start_listening()
             except aiomqtt.MqttError as msg_err:
                 logger.warning(f"{lp} MQTT error: {msg_err}")
                 continue
 
-    async def start_listening(self):
-        """Start listening for MQTT messages on subscribed topics"""
-        lp = f"{self.lp}rcv:"
+    async def start_subscribe(self):
+        lp = f"{self.lp}subscribe:"
         topics = [
             (f"{self.sub_topic}/monitor/#", 0),
         ]
         await self._client.subscribe(topics)
-        logger.debug(f"{lp} Subscribed to MQTT topics: {[x[0] for x in topics]}. "
-                     f"Waiting for MQTT messages...")
+        logger.info(f"{lp} Subscribed to MQTT topics: {[x[0] for x in topics]}")
+
+    async def start_listening(self):
+        """Start listening for MQTT messages on subscribed topics"""
+        lp = f"{self.lp}rcv:"
+        logger.info(f"{lp} Waiting for MQTT messages...")
         async for message in self._client.messages:
             topic = message.topic
             payload = message.payload
