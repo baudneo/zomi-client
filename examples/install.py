@@ -42,7 +42,7 @@ _extended_re: Pattern = re.compile(r"(?<!\\)\$\{([A-Za-z0-9_]+)((:?-)([^}]+))?}"
 logger = logging.getLogger("install_client")
 logger.setLevel(logging.INFO)
 log_formatter = logging.Formatter(
-    "%(asctime)s.%(msecs)04d %(name)s[%(process)s] %(levelname)s %(module)s:%(lineno)d -> %(message)s",
+    "%(asctime)s.%(msecs)d %(name)s[%(process)s] %(levelname)s %(module)s:%(lineno)d -> %(message)s",
     "%m/%d/%y %H:%M:%S",
 )
 console = logging.StreamHandler(stream=sys.stdout)
