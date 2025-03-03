@@ -973,6 +973,14 @@ def do_install():
         cfg_create_mode,
     )
 
+    copy_file(
+        EXAMPLES_DIR / "mqttd.py",
+        data_dir / "bin/mqttd.py",
+        install_as_user,
+        install_as_group,
+        cfg_create_mode,
+    )
+
     create_("secrets", cfg_dir / "secrets.yml")
     create_(_inst_type, cfg_dir / f"{_inst_type}.yml")
 
@@ -980,13 +988,14 @@ def do_install():
     # so that they can be called from anywhere
     test_msg(
         f"Creating symlinks for event start/stop commands: /usr/local/bin will contain zomi-ESC "
-        f"(shell helper) and zomi-eventproc (python script)",
+        f"(shell helper), zomi-eventproc (CLI script) and zomi-mqttd (MQTT daemon)",
         "info",
     )
     if not testing:
         # Make sure it does not exist first, it will error if file exists
         _dest_esc = Path("/usr/local/bin/zomi-ESC")
         _dest_ep = Path("/usr/local/bin/zomi-eventproc")
+        _dest_mqtt = Path("/usr/local/bin/zomi-mqttd")
         # if it exists log a message that it is being unlinked then symlinked again with specified user
 
         if _dest_esc.exists():
@@ -1007,6 +1016,14 @@ def do_install():
             else:
                 raise ValueError(f"Invalid destination file: {_dest_ep} - Please delete the existing file yourself!")
         _dest_ep.symlink_to(f"{data_dir}/bin/eventproc.py")
+        if _dest_mqtt.exists():
+            logger.warning(
+                f"{_dest_mqtt} already exists, unlinking and sym-linking again..."
+            )
+            if _dest_mqtt not in FORBIDDEN_DESTS:
+                _dest_mqtt.unlink()
+            else:
+                raise ValueError(f"Invalid destination file: {_dest_mqtt} - Please delete the existing file yourself!")
 
     if not create_venv(create_pip_cmd()):
         raise RuntimeError("Failed to create VENV!")
