@@ -79,7 +79,6 @@ class ZMDB:
         self.engine: Optional[Engine] = None
         self.connection: Optional[Connection] = None
         self.meta: Optional[MetaData] = None
-        g.db = self
         self.config = self.init_config()
         self._db_create()
 
