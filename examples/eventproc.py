@@ -168,11 +168,11 @@ if __name__ == "__main__":
         detections = loop.run_until_complete(main())
     except Exception as e:
         logger.error(f"eventproc: Error in main(): {e}", exc_info=True)
-        from zomi_client import Log
-        for handler in logger.handlers:
-            if isinstance(handler, Log.BufferedLogHandler):
-                # should only print out if there is no file logging going on
-                handler.flush2()
+        # from zomi_client import Log
+        # for handler in logger.handlers:
+        #     if isinstance(handler, Log.BufferedLogHandler):
+        #         # should only print out if there is no file logging going on
+        #         handler.flush2()
     # Allow 250ms for aiohttp SSL session context to close properly
     # loop.run_until_complete(asyncio.sleep(0.25))
     if detections is not None:
