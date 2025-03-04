@@ -668,7 +668,7 @@ class ZMClient:
     def _init_db(self):
         from .Libs.DB import ZMDB
 
-        self.db = ZMDB()
+        g.db = self.db = ZMDB()
         logger.debug(f"DB initialized")
 
     def _init_api(self):
