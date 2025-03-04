@@ -8,6 +8,7 @@ from typing import Union, Optional, Any, Dict
 import numpy as np
 import paho.mqtt.client as paho_client
 
+
 from ..Log import CLIENT_LOGGER_NAME
 from ..Models.config import MLNotificationSettings, GlobalConfig
 from ..Notifications import CoolDownBase
@@ -153,7 +154,7 @@ class MQTT(CoolDownBase):
                             )
                             # mTLS cert and key are both present
                             self.client_id = f"{self.client_id}mTLS-{uuid}"
-                            self.client = paho_client.Client(self.client_id)
+                            self.client = paho_client.Client(paho_client.CallbackAPIVersion.VERSION1, self.client_id)
                             self.client.tls_set(
                                 ca_certs=self.config.tls_ca.expanduser()
                                 .resolve()
@@ -194,7 +195,7 @@ class MQTT(CoolDownBase):
                         )
                     else:
                         self.client_id = f"{self.client_id}TLS-{uuid}"
-                        self.client = paho_client.Client(self.client_id)
+                        self.client = paho_client.Client(paho_client.CallbackAPIVersion.VERSION1, self.client_id)
                         self.client.tls_set(
                             self.config.tls_ca.expanduser().resolve().as_posix(),
                             cert_reqs=self.ssl_cert,
@@ -211,7 +212,7 @@ class MQTT(CoolDownBase):
             if not self.client:
                 # No tls_ca so we are not using TLS
                 self.client_id = f"{self.client_id}noTLS-{uuid}"
-                self.client = paho_client.Client(self.client_id)
+                self.client = paho_client.Client(paho_client.CallbackAPIVersion.VERSION1, self.client_id)
                 logger.debug(
                     f"{LP}connect: ID: {self.client_id} -> "
                     f"{self.config.broker if not self.sanitize else self.sanitize_str}:{self.config.port} "
