@@ -7,6 +7,7 @@ import requests
 from ..Log import CLIENT_LOGGER_NAME
 from ..Notifications import CoolDownBase
 from ..main import get_global_config
+
 if TYPE_CHECKING:
     from ..Models.config import GlobalConfig
 
@@ -31,8 +32,8 @@ class Gotify(CoolDownBase):
     def send(self, pred_out: str):
         if not self.check_cooldown(g.mid):
             return
-        lp = "gotify::send::"
-        url_opts = self.config.url_opts
+        lp = "gotify:send:"
+        url_opts = g.config.notifications.url_opts
         _mode = url_opts.mode
         _scale = url_opts.scale
         _max_fps = url_opts.max_fps
@@ -42,8 +43,8 @@ class Gotify(CoolDownBase):
         host = self.config.host
         token = self.config.token
         link_url = self.config.clickable_link
-        link_user = self.config.link_user
-        link_pass = self.config.link_pass
+        link_user = g.config.notifications.link_user
+        link_pass = g.config.notifications.link_pass
 
         image_auth = ""
         event_auth = ""

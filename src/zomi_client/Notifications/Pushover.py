@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import logging
 import pickle
@@ -166,7 +168,7 @@ class Pushover(CoolDownBase):
 
     @image.setter
     def image(self, img: np.ndarray):
-        lp = "pushover::image::set::"
+        lp = "pushover:image:set:"
         import cv2
         is_succ, img = cv2.imencode(".jpg", img)
         img = img.tobytes()
@@ -185,12 +187,12 @@ class Pushover(CoolDownBase):
 
     def pickle(self, action: str = 'r', data: Optional[float] = None):
         """Pickle read/write the timestamp of each monitor's last successful pushover notification"""
-        lp: str = "pushover::pickle::"
+        lp: str = "pushover:pickle:"
         action = action.casefold().strip()
         var_path = g.config.system.variable_data_path
         file = var_path / f"pushover_m{g.mid}.pkl"
         if action == "r":
-            lp = f"{lp}read::"
+            lp = f"{lp}read:"
             if file.exists():
                 try:
                     time_since_sent = pickle_loads(file.read_bytes())
@@ -220,7 +222,7 @@ class Pushover(CoolDownBase):
                 logger.debug(f"{lp} no file found for monitor {g.mid}: '{file}'")
 
         elif action == "w":
-            lp = f"{lp}write::"
+            lp = f"{lp}write:"
             if data:
                 if isinstance(data, float):
                     try:
@@ -340,7 +342,7 @@ class Pushover(CoolDownBase):
 
     def send(self):
         """Send Pushover notification"""
-        lp: str = "pushover::send::"
+        lp: str = "pushover:send:"
         if not self.check_cooldown(g.mid):
             return
         logger.debug(f"{lp} {self.request_data = }")
@@ -354,7 +356,7 @@ class Pushover(CoolDownBase):
 
 
         try:
-            data = self.request_data.dict()
+            data = self.request_data.model_dump()
             r = self.request(
                 method,
                 url,
