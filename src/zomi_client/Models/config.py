@@ -310,8 +310,6 @@ class MLNotificationSettings(BaseModel):
         token: Optional[str] = None
         portal: Optional[AnyUrl] = None
         clickable_link: Optional[bool] = Field(False)
-        link_user: Optional[SecretStr] = None
-        link_pass: Optional[SecretStr] = None
         _push_auth: Optional[SecretStr] = None
         cooldown: Optional[CoolDownSettings] = Field(default_factory=CoolDownSettings)
 
@@ -351,8 +349,6 @@ class MLNotificationSettings(BaseModel):
         base_url: Optional[AnyUrl] = Field("https://api.pushover.net/1")
         endpoints: Optional[EndPoints] = Field(default_factory=EndPoints)
         clickable_link: Optional[bool] = Field(False)
-        link_user: Optional[SecretStr] = None
-        link_pass: Optional[SecretStr] = None
         priority: Optional[int] = Field(ge=-2, le=2, default=0)
 
         # validators
@@ -392,6 +388,24 @@ class MLNotificationSettings(BaseModel):
 
         image: Optional[MQTTImageSettings] = Field(default_factory=MQTTImageSettings)
 
+    class NtfyNotificationSettings(DefaultNotEnabled):
+        url: Optional[AnyUrl] = Field(None, description="The ntfy server URL")
+        topic: Optional[str] = Field(None, description="The ntfy topic to publish to")
+        priority: Optional[int] = Field(3, description="The priority of the notification")
+        token: Optional[SecretStr] = Field(None, description="The ntfy access token")
+        tags: Optional[List[str]] = Field(default_factory=list, description="Tags for the notification")
+
+        clickable_link: Optional[bool] = Field(False)
+
+        cooldown: Optional[CoolDownSettings] = Field(default_factory=CoolDownSettings)
+        portal: Optional[AnyUrl] = None
+
+        # validators
+        _validate_host_portal = field_validator("url", "portal", mode="before")(
+            validate_no_scheme_url
+        )
+
+
     mqtt: Optional[MQTTNotificationSettings] = Field(
         default_factory=MQTTNotificationSettings
     )
@@ -406,6 +420,14 @@ class MLNotificationSettings(BaseModel):
     )
     shell_script: Optional[ShellScriptNotificationSettings] = Field(
         default_factory=ShellScriptNotificationSettings
+    )
+    ntfy: Optional[NtfyNotificationSettings] = Field(
+        default_factory=NtfyNotificationSettings
+    )
+    link_user: Optional[SecretStr] = None
+    link_pass: Optional[SecretStr] = None
+    url_opts: Optional[NotificationZMURLOptions] = Field(
+        default_factory=NotificationZMURLOptions
     )
 
 

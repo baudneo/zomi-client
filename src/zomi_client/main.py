@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     from .Notifications.zmNinja import ZMNinja
     from .Notifications.MQTT import MQTT
     from .Notifications.ShellScript import ShellScriptNotification
+    from .Notifications.ntfy import NtfyNotification
 
 ZM_INSTALLED: Optional[str] = which("zmpkg.pl")
 
@@ -447,6 +448,7 @@ class Notifications:
     gotify: Optional[Gotify] = None
     pushover: Optional[Pushover] = None
     shell_script: Optional[ShellScriptNotification] = None
+    ntfy: Optional[NtfyNotification] = None
     webhook = None
 
     def __init__(self):
@@ -455,25 +457,26 @@ class Notifications:
         from .Notifications.zmNinja import ZMNinja
         from .Notifications.MQTT import MQTT
         from .Notifications.ShellScript import ShellScriptNotification
+        from .Notifications.ntfy import NtfyNotification
 
         config = g.config.notifications
         if config.zmninja.enabled:
             self.zmninja = ZMNinja()
         if config.gotify.enabled:
             self.gotify = Gotify()
-            # Gotify config allows for overriding portal url
-            if config.gotify.portal:
-                _portal = str(config.gotify.portal)
-            else:
-                _portal = str(g.api.portal_base_url)
-            # get link user auth
-            has_https = True
-            if not re.compile(r"https://").match(_portal):
-                has_https = False
-            if config.gotify.clickable_link:
-                self.gotify._push_auth = get_push_auth(
-                    g.api, config.gotify.link_user, config.gotify.link_pass, has_https
-                )
+            # # Gotify config allows for overriding portal url
+            # if config.gotify.portal:
+            #     _portal = str(config.gotify.portal)
+            # else:
+            #     _portal = str(g.api.portal_base_url)
+            # # get link user auth
+            # has_https = True
+            # if not re.compile(r"https://").match(_portal):
+            #     has_https = False
+            # if config.gotify.clickable_link:
+            #     self.gotify._push_auth = get_push_auth(
+            #         g.api, g.config.notifications.link_user, g.config.notifications.link_pass, has_https
+            #     )
 
         if config.pushover.enabled:
             # get link user auth
@@ -484,11 +487,13 @@ class Notifications:
             if config.pushover.clickable_link:
                 self.pushover._push_auth = get_push_auth(
                     g.api,
-                    config.pushover.link_user,
-                    config.pushover.link_pass,
+                    g.config.notifications.link_user,
+                    g.config.notifications.link_pass,
                     has_https,
                 )
 
+        if config.ntfy.enabled:
+            self.ntfy = NtfyNotification()
         if config.shell_script.enabled:
             self.shell_script = ShellScriptNotification()
         if config.mqtt.enabled:
@@ -2142,6 +2147,12 @@ class ZMClient:
                 thread_name_prefix="notifications",
                 max_workers=g.config.system.thread_workers,
             ) as executor:
+                if noti_cfg.ntfy.enabled:
+                    logger.debug(f"{lp} NTFY notification configured")
+                    ntfy = self.notifications.ntfy
+                    ntfy.title = f"({g.eid}) {g.mon_name}->{g.event_cause}"
+                    futures.append(executor.submit(ntfy.send, prediction_str))
+
                 if noti_cfg.pushover.enabled:
                     # Pushover has a limit of messages per month, so it needs a one time strategy
                     # Pushover requires to send the image/gif to them instead of requesting it from the server
@@ -2157,7 +2168,7 @@ class ZMClient:
                     if noti_cfg.pushover.clickable_link:
                         po.request_data.url_title = "View event in browser"
                         push_url_opts: NotificationZMURLOptions = (
-                            noti_cfg.pushover.url_opts
+                            noti_cfg.url_opts
                         )
                         _mode = push_url_opts.mode
                         _scale = push_url_opts.scale
